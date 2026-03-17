@@ -7,7 +7,8 @@
   "dependencies": [
     {
       "name": "python",
-      "source": "github.com/stuttgart-things/dagger/python@feat/python-module"
+      "source": "github.com/stuttgart-things/dagger/python@main",
+      "pin": "80d6b7bffc0fcae93cd468347842dc574c4b7a99"
     },
     {
       "name": "homerun",
