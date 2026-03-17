@@ -1,0 +1,30 @@
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: homerun2-led-catcher
+  description: RGB LED matrix catcher for homerun2 — displays notifications on LED matrix with HTMX web simulator
+  annotations:
+    github.com/project-slug: stuttgart-things/homerun2-led-catcher
+    backstage.io/techdocs-ref: url:https://github.com/stuttgart-things/homerun2-led-catcher/tree/main
+    backstage.io/source-location: url:https://github.com/stuttgart-things/homerun2-led-catcher
+  tags:
+    - consumer
+    - redis
+    - python
+    - homerun2
+    - led-matrix
+    - htmx
+    - raspberry-pi
+  links:
+    - url: https://github.com/stuttgart-things/homerun2-led-catcher
+      title: GitHub Repository
+      icon: github
+spec:
+  type: service
+  lifecycle: experimental
+  owner: platform-team
+  system: homerun2
+  dependsOn:
+    - resource:redis
+    - component:homerun2-omni-pitcher
