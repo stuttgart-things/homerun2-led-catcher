@@ -5,8 +5,17 @@ from led_catcher.config import load_config
 
 def test_load_config_defaults(monkeypatch):
     # Clear relevant env vars
-    for key in ("REDIS_ADDR", "REDIS_PORT", "REDIS_PASSWORD", "REDIS_STREAM",
-                "CONSUMER_GROUP", "LED_MODE", "HEALTH_PORT", "LOG_FORMAT", "LOG_LEVEL"):
+    for key in (
+        "REDIS_ADDR",
+        "REDIS_PORT",
+        "REDIS_PASSWORD",
+        "REDIS_STREAM",
+        "CONSUMER_GROUP",
+        "LED_MODE",
+        "HEALTH_PORT",
+        "LOG_FORMAT",
+        "LOG_LEVEL",
+    ):
         monkeypatch.delenv(key, raising=False)
 
     cfg = load_config()

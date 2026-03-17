@@ -21,8 +21,10 @@ def set_build_info(version: str, commit: str, date: str) -> None:
 @health_app.get("/healthz")
 @health_app.get("/health")
 async def healthz() -> JSONResponse:
-    return JSONResponse({
-        "status": "ok",
-        "time": datetime.now(timezone.utc).isoformat(),
-        **_build_info,
-    })
+    return JSONResponse(
+        {
+            "status": "ok",
+            "time": datetime.now(timezone.utc).isoformat(),
+            **_build_info,
+        }
+    )

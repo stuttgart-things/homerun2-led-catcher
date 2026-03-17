@@ -100,8 +100,21 @@ class _JsonFormatter(logging.Formatter):
             "logger": record.name,
         }
         # Include extra fields if any
-        for key in ("version", "commit", "date", "redis_addr", "stream", "consumer_group", "error",
-                    "object_id", "stream_id", "severity", "system", "title", "author"):
+        for key in (
+            "version",
+            "commit",
+            "date",
+            "redis_addr",
+            "stream",
+            "consumer_group",
+            "error",
+            "object_id",
+            "stream_id",
+            "severity",
+            "system",
+            "title",
+            "author",
+        ):
             val = getattr(record, key, None)
             if val is not None:
                 log_entry[key] = val

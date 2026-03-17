@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=75.0", "setuptools-scm>=8.0"]
+requires = ["setuptools>=75.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "homerun2-led-catcher"
-dynamic = ["version"]
+version = "0.1.0"
 description = "RGB LED matrix catcher for homerun2 — consumes Redis Streams messages and displays on LED matrix hardware with embedded HTMX simulator"
 readme = "README.md"
 license = "Apache-2.0"
@@ -46,10 +46,6 @@ led-catcher = "led_catcher.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools_scm]
-version_scheme = "guess-next-dev"
-local_scheme = "no-local-version"
 
 [tool.ruff]
 target-version = "py311"

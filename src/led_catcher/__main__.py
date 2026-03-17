@@ -89,7 +89,7 @@ async def _run(cfg: Config) -> None:
     # Start health/web server in background
     server_config = uvicorn.Config(
         health_app,
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104 - intentional for container service
         port=cfg.health_port,
         log_level="warning",
     )
