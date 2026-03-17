@@ -1,0 +1,38 @@
+displayRules:
+  github-error:
+    systems: [github, gitlab]
+    severity: [ERROR]
+    kind: gif
+    image: sunset.gif
+    duration: 5
+
+  scale-weight:
+    systems: [scale]
+    severity: [INFO]
+    kind: static
+    text: "{{ message | replace('WEIGHT: ','') }}g"
+    font: myfont.bdf
+    duration: 3
+
+  warning-all:
+    systems: ["*"]
+    severity: [WARNING]
+    kind: text
+    text: "{{ system }}: {{ title }}"
+    font: myfont.bdf
+    duration: 5
+
+  default-info:
+    systems: ["*"]
+    severity: [INFO, SUCCESS]
+    kind: text
+    text: "{{ system }}: {{ title }}"
+    font: myfont.bdf
+    duration: 5
+
+colors:
+  error: [255, 0, 0]
+  warning: [255, 165, 0]
+  success: [0, 255, 0]
+  info: [0, 100, 255]
+  debug: [128, 128, 128]
