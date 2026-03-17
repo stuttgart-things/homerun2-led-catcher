@@ -7,6 +7,7 @@ import logging
 import signal
 
 import uvicorn
+from fastapi import FastAPI
 
 from led_catcher.config import Config, load_config, setup_logging
 from led_catcher.consumer import RedisConsumer
@@ -14,13 +15,15 @@ from led_catcher.handlers.health import health_app, set_build_info
 from led_catcher.handlers.led_handler import create_led_handler
 from led_catcher.handlers.log_handler import log_handler
 from led_catcher.profile import load_profile
+from led_catcher.web import EventTracker, create_web_app, create_web_handler
 
 logger = logging.getLogger("led_catcher")
 
 
-def _build_handlers(cfg: Config) -> list:
-    """Compose message handlers based on LED_MODE."""
+def _build_handlers(cfg: Config) -> tuple[list, EventTracker | None]:
+    """Compose message handlers based on LED_MODE. Returns (handlers, tracker)."""
     handlers = [log_handler]
+    tracker = None
 
     mode = cfg.led_mode.lower()
     if mode not in ("led", "web", "full"):
@@ -34,11 +37,23 @@ def _build_handlers(cfg: Config) -> list:
         logger.info("LED handler active")
 
     if mode in ("web", "full"):
-        # Web handler will be added in Milestone 3 (#7)
-        logger.info("web handler: not yet implemented, skipping")
+        tracker = EventTracker()
+        handlers.append(create_web_handler(profile, tracker))
+        logger.info("web handler active")
 
     logger.info("active mode: %s, handlers: %d", mode, len(handlers))
-    return handlers
+    return handlers, tracker
+
+
+def _build_app(cfg: Config, tracker: EventTracker | None) -> FastAPI:
+    """Build the combined FastAPI app with health + optional web simulator."""
+    if tracker is not None:
+        # Mount health endpoints on the web app
+        web_app = create_web_app(tracker, cfg.version, cfg.commit, cfg.date)
+        web_app.get("/healthz")(health_app.routes[0].endpoint)
+        web_app.get("/health")(health_app.routes[1].endpoint)
+        return web_app
+    return health_app
 
 
 async def _run_consumer(cfg: Config, handlers: list) -> None:
@@ -67,7 +82,7 @@ async def _run_consumer(cfg: Config, handlers: list) -> None:
 
 async def _run(cfg: Config) -> None:
     set_build_info(cfg.version, cfg.commit, cfg.date)
-    handlers = _build_handlers(cfg)
+    handlers, tracker = _build_handlers(cfg)
 
     logger.info(
         "starting homerun2-led-catcher",
@@ -86,9 +101,12 @@ async def _run(cfg: Config) -> None:
         },
     )
 
-    # Start health/web server in background
+    # Build combined app (health + optional web simulator)
+    app = _build_app(cfg, tracker)
+
+    # Start server in background
     server_config = uvicorn.Config(
-        health_app,
+        app,
         host="0.0.0.0",  # nosec B104 - intentional for container service
         port=cfg.health_port,
         log_level="warning",
@@ -96,7 +114,10 @@ async def _run(cfg: Config) -> None:
     server = uvicorn.Server(server_config)
     server_task = asyncio.create_task(server.serve())
 
-    logger.info("health server started on port %d", cfg.health_port)
+    if tracker is not None:
+        logger.info("web simulator started on port %d", cfg.health_port)
+    else:
+        logger.info("health server started on port %d", cfg.health_port)
 
     # Run consumer (blocks until shutdown signal)
     await _run_consumer(cfg, handlers)
