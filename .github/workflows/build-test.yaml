@@ -24,7 +24,7 @@ jobs:
       accept-failedtests: false
     secrets: inherit
 
-  build-docker-image:
+  build-push-scan:
     runs-on: dagger
     needs: python-validation
     environment: k8s
@@ -32,7 +32,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6.0.2
 
-      - name: Build Docker image
+      - name: Build and push Docker image to ttl.sh
+        id: push
         uses: dagger/dagger-for-github@v8.4.0
         with:
           version: "0.20.0"
@@ -41,3 +42,19 @@ jobs:
           args: >-
             build
             --src .
+            push
+            --repository-name stuttgart-things/homerun2-led-catcher
+            --registry-url ttl.sh
+            --tag 1h
+
+      - name: Trivy scan pushed image
+        uses: dagger/dagger-for-github@v8.4.0
+        with:
+          version: "0.20.0"
+          verb: call
+          module: github.com/stuttgart-things/dagger/trivy@v0.86.0
+          args: >-
+            scan-image
+            --image-ref ttl.sh/stuttgart-things/homerun2-led-catcher:1h
+            export --path /tmp/trivy-report.json
+        continue-on-error: true

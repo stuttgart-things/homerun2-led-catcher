@@ -130,12 +130,57 @@ tasks:
     desc: Build Docker image via Dagger (docker module)
     cmds:
       - |
-        dagger call -m {{ .DAGGER_MODULE }} \
+        dagger call -m {{ .DOCKER_MODULE }} \
         build --src . \
         --progress plain
     vars:
-      DAGGER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
+      DOCKER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
       DAGGER_MODULE_VERSION: v0.86.0
+
+  ci-docker-push:
+    desc: Build and push Docker image to ttl.sh (ephemeral, 1h TTL)
+    cmds:
+      - |
+        dagger call -m {{ .DOCKER_MODULE }} \
+        build --src . \
+        push \
+        --repository-name {{ .REPOSITORY_NAME }} \
+        --registry-url {{ .REGISTRY_URL }} \
+        --tag {{ .TAG }} \
+        --progress plain
+    vars:
+      DOCKER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
+      DAGGER_MODULE_VERSION: v0.86.0
+      REPOSITORY_NAME: stuttgart-things/homerun2-led-catcher
+      REGISTRY_URL: ttl.sh
+      TAG: 1h
+
+  ci-trivy-scan:
+    desc: Scan Docker image with Trivy (push to ttl.sh first, then scan)
+    cmds:
+      - |
+        IMAGE_REF=$(dagger call -m {{ .DOCKER_MODULE }} \
+        build --src . \
+        push \
+        --repository-name {{ .REPOSITORY_NAME }} \
+        --registry-url {{ .REGISTRY_URL }} \
+        --tag {{ .TAG }} \
+        --progress plain)
+        echo "Pushed image: ${IMAGE_REF}"
+        dagger call -m {{ .TRIVY_MODULE }} \
+        scan-image \
+        --image-ref "${IMAGE_REF}" \
+        --progress plain \
+        export --path /tmp/trivy-report.json
+        echo "Trivy report saved to /tmp/trivy-report.json"
+        cat /tmp/trivy-report.json | python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('ParsedSummary',{}); print(f'Vulnerabilities: {json.dumps(s, indent=2)}')" 2>/dev/null || cat /tmp/trivy-report.json | head -50
+    vars:
+      DOCKER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
+      TRIVY_MODULE: github.com/stuttgart-things/dagger/trivy@{{ .DAGGER_MODULE_VERSION }}
+      DAGGER_MODULE_VERSION: v0.86.0
+      REPOSITORY_NAME: stuttgart-things/homerun2-led-catcher
+      REGISTRY_URL: ttl.sh
+      TAG: 1h
 
   branch:
     desc: Create branch from main
