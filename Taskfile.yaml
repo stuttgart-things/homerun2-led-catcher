@@ -20,10 +20,34 @@ tasks:
     cmds:
       - ruff format src/ tests/
 
+  format-check:
+    desc: Check code formatting with ruff (non-modifying)
+    cmds:
+      - ruff format --check src/ tests/
+
   test:
     desc: Run pytest
     cmds:
       - pytest tests/ -v
+
+  precommit:
+    desc: Run pre-commit checks (lint, format-check, test) - fast local checks
+    cmds:
+      - task: lint
+      - task: format-check
+      - task: test
+
+  setup-precommit:
+    desc: Install git pre-commit hook that runs task precommit
+    cmds:
+      - |
+        cat > .git/hooks/pre-commit << 'HOOK'
+        #!/bin/sh
+        echo "Running pre-commit checks..."
+        task precommit
+        HOOK
+        chmod +x .git/hooks/pre-commit
+        echo "Pre-commit hook installed"
 
   run:
     desc: Run led-catcher locally (LED_MODE=web, no hardware needed)
