@@ -6,6 +6,10 @@
   },
   "dependencies": [
     {
+      "name": "python",
+      "source": "github.com/stuttgart-things/dagger/python@feat/python-module"
+    },
+    {
       "name": "homerun",
       "source": "github.com/stuttgart-things/dagger/homerun@v0.72.0",
       "pin": "488630cce28f59ee0bf3f1612a75e988012225f8"

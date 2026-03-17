@@ -1,0 +1,24 @@
+---
+name: Build & Test
+on:
+  push:
+    branches:
+      - main
+      - "feat/**"
+      - "fix/**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  python-validation:
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-python-validation.yaml@main
+    with:
+      runs-on: ghr-homerun2-led-catcher
+      module-name: homerun2-led-catcher
+      python-version: "3.12-slim"
+      ruff-version: "0.8.6"
+      environment-name: k8s
+      accept-linterrors: false
+      accept-failedtests: false
+    secrets: inherit
