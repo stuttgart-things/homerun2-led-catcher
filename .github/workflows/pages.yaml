@@ -1,0 +1,13 @@
+---
+name: Deploy Pages
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
+jobs:
+  pages:
+    uses: stuttgart-things/github-workflow-templates/.github/workflows/call-deploy-pages.yaml@main
+    with:
+      runs-on: ubuntu-latest

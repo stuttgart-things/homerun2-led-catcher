@@ -1,0 +1,13 @@
+config.image: ghcr.io/stuttgart-things/homerun2-led-catcher:main
+config.namespace: homerun2-flux
+config.redisAddr: redis-stack.homerun2-flux.svc.cluster.local
+config.redisPort: "6379"
+config.redisPassword: "Atlan7is2026!"
+config.redisStream: messages
+config.consumerGroup: homerun2-led-catcher
+config.ledMode: web
+config.healthPort: "8080"
+config.httpRouteEnabled: true
+config.httpRouteParentRefName: movie-scripts2-gateway
+config.httpRouteParentRefNamespace: default
+config.httpRouteHostname: led-catcher.movie-scripts2.sthings-vsphere.labul.sva.de

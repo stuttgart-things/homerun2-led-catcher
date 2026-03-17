@@ -1,0 +1,111 @@
+---
+name: Release
+on:
+  workflow_run:
+    workflows: ["Build & Test"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: dagger
+    environment: k8s
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Get version before release
+        id: version-before
+        run: |
+          git fetch --tags
+          BEFORE=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || echo "none")
+          echo "version=$BEFORE" >> $GITHUB_OUTPUT
+
+      - name: Semantic release
+        uses: dagger/dagger-for-github@v8.4.0
+        with:
+          module: github.com/stuttgart-things/dagger/release@v0.86.0
+          call: >-
+            semantic
+            --src .
+            --token env:GITHUB_TOKEN
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync to released commit
+        run: |
+          git fetch --tags
+          git pull --ff-only || true
+
+      - name: Get new version
+        id: version-after
+        run: |
+          AFTER=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || echo "none")
+          echo "version=$AFTER" >> $GITHUB_OUTPUT
+          if [ "$AFTER" != "${{ steps.version-before.outputs.version }}" ] && [ "$AFTER" != "none" ]; then
+            echo "new_release=true" >> $GITHUB_OUTPUT
+            echo "New release: $AFTER"
+          else
+            echo "new_release=false" >> $GITHUB_OUTPUT
+            echo "No new release"
+          fi
+
+      - name: Login to GHCR
+        if: steps.version-after.outputs.new_release == 'true'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build and push versioned image to GHCR
+        if: steps.version-after.outputs.new_release == 'true'
+        run: |
+          VERSION="${{ steps.version-after.outputs.version }}"
+          docker build \
+            --build-arg VERSION=${VERSION} \
+            --build-arg COMMIT=${{ github.sha }} \
+            --build-arg DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            -t ghcr.io/${{ github.repository }}:${VERSION} \
+            -t ghcr.io/${{ github.repository }}:latest \
+            .
+          docker push ghcr.io/${{ github.repository }}:${VERSION}
+          docker push ghcr.io/${{ github.repository }}:latest
+
+      - name: Push kustomize base
+        if: steps.version-after.outputs.new_release == 'true'
+        uses: dagger/dagger-for-github@v8.4.0
+        with:
+          module: github.com/stuttgart-things/dagger/kcl@v0.86.0
+          call: >-
+            push-kustomize-base
+            --source ./kcl
+            --parameters-file ./tests/kcl-deploy-profile.yaml
+            --address ghcr.io/stuttgart-things/homerun2-led-catcher-kustomize
+            --tag ${{ steps.version-after.outputs.version }}
+            --user env:GITHUB_USER
+            --password env:GITHUB_TOKEN
+          cloud-token: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+        env:
+          GITHUB_USER: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release notes
+        if: steps.version-after.outputs.new_release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version-after.outputs.version }}"
+          EXISTING_BODY=$(gh release view "$VERSION" --json body --jq '.body')
+          ARTIFACTS="### Artifacts\n\n| Artifact | Reference |\n|----------|-----------|"
+          ARTIFACTS="${ARTIFACTS}\n| **Image** | \`ghcr.io/${{ github.repository }}:${VERSION}\` |"
+          ARTIFACTS="${ARTIFACTS}\n| **Kustomize** | \`ghcr.io/stuttgart-things/homerun2-led-catcher-kustomize:${VERSION}\` |"
+          gh release edit "$VERSION" --notes "$(printf '%s\n\n%b' "$EXISTING_BODY" "$ARTIFACTS")"
