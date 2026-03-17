@@ -453,16 +453,72 @@
             '?': [[1,1,1],[0,0,1],[0,1,0],[0,0,0],[0,1,0]],
         };
 
-        // Show initial text
-        clearMatrix();
-        drawTextLine('HOMERUN2', 5, 99, 102, 241, 14);
-        drawTextLine('LED CATCHER', 18, 249, 115, 22, 8);
-        drawTextLine('MATRIX SIM', 31, 139, 92, 246, 10);
-        drawTextLine('WAITING...', 48, 80, 80, 80, 10);
+        // Draw idle/clock screen
+        function drawIdleScreen() {
+            clearMatrix();
+            const now = new Date();
+            const time = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const date = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-        // Scrolling state
-        let scrollInterval = null;
+            // Time in bright purple (large, centered)
+            drawTextLine(time, 8, 99, 102, 241, 14);
+
+            // Date in dim
+            drawTextLine(date, 22, 60, 60, 80, 12);
+
+            // Divider line
+            for (let x = 8; x < 56; x++) {
+                setPixel(x, 32, 40, 40, 60, 0.5);
+            }
+
+            // Stats
+            const evCount = document.getElementById('stats-count');
+            const count = evCount ? evCount.textContent : '0';
+            drawTextLine('EVENTS: ' + count, 38, 60, 80, 60, 4);
+
+            // Label
+            drawTextLine('HOMERUN2', 50, 50, 50, 70, 14);
+            drawTextLine('LED CATCHER', 58, 40, 40, 50, 8);
+        }
+
+        // State management
         let lastEventId = null;
+        let lastEventTime = 0;
+        let idleTimer = null;
+        let clockInterval = null;
+        let isIdle = true;
+        const EVENT_DISPLAY_SECONDS = 5;
+
+        function showEvent(ev) {
+            isIdle = false;
+            lastEventTime = Date.now();
+
+            // Stop clock updates
+            if (clockInterval) {
+                clearInterval(clockInterval);
+                clockInterval = null;
+            }
+
+            drawEvent(ev);
+
+            // Set timer to switch to idle after EVENT_DISPLAY_SECONDS
+            if (idleTimer) clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+                goIdle();
+            }, EVENT_DISPLAY_SECONDS * 1000);
+        }
+
+        function goIdle() {
+            isIdle = true;
+            drawIdleScreen();
+            // Update clock every second while idle
+            clockInterval = setInterval(() => {
+                if (isIdle) drawIdleScreen();
+            }, 1000);
+        }
+
+        // Start in idle mode
+        goIdle();
 
         // Update matrix when new events arrive
         const eventsSource = new EventSource('/api/events/stream');
@@ -470,11 +526,10 @@
             fetch('/api/events').then(r => r.json()).then(events => {
                 if (events.length > 0) {
                     const ev = events[0];
-                    // Skip if same event
                     const evId = ev.timestamp + ev.title;
                     if (evId === lastEventId) return;
                     lastEventId = evId;
-                    drawEvent(ev);
+                    showEvent(ev);
                 }
             });
         });
