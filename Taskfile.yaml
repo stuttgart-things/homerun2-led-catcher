@@ -1,0 +1,72 @@
+---
+version: 3
+vars:
+  BRANCH:
+    sh: if [ $(git rev-parse --abbrev-ref HEAD) != "main" ]; then echo $(git rev-parse --abbrev-ref HEAD); else echo main; fi
+
+tasks:
+  install:
+    desc: Install package in editable mode with dev dependencies
+    cmds:
+      - pip install -e ".[dev]"
+
+  lint:
+    desc: Run ruff linter
+    cmds:
+      - ruff check src/ tests/
+
+  format:
+    desc: Format code with ruff
+    cmds:
+      - ruff format src/ tests/
+
+  test:
+    desc: Run pytest
+    cmds:
+      - pytest tests/ -v
+
+  run:
+    desc: Run led-catcher locally (LED_MODE=web, no hardware needed)
+    env:
+      LED_MODE: web
+      LOG_FORMAT: text
+      LOG_LEVEL: info
+    cmds:
+      - python -m led_catcher
+
+  build-image:
+    desc: Build Docker image
+    cmds:
+      - docker build -t homerun2-led-catcher:local .
+
+  branch:
+    desc: Create branch from main
+    cmds:
+      - git checkout main
+      - git pull
+      - |
+        echo "Enter branch name:"
+        read BRANCH_NAME;
+        git checkout -b ${BRANCH_NAME}
+        git push origin ${BRANCH_NAME}
+
+  commit:
+    desc: Commit + push code into branch
+    cmds:
+      - git branch --set-upstream-to=origin/{{ .BRANCH }}
+      - git pull
+      - |
+        echo "ENTER COMMIT MESSAGE"
+        read COMMIT_MESSAGE;
+        git add *
+        git commit -am "$(echo ${COMMIT_MESSAGE})"
+        git push origin -u {{ .BRANCH }}
+
+  pr:
+    desc: Create pull request into main
+    cmds:
+      - task: commit
+      - gh pr create -t "{{ .BRANCH }}" -b "{{ .BRANCH }} branch into main"
+      - sleep 10s
+      - gh pr merge $(gh pr list | grep "^[^#;]" | awk '{print $1}') --auto --rebase --delete-branch
+      - git checkout main && git pull
