@@ -163,18 +163,53 @@ kcl run kcl/ -y tests/kcl-deploy-profile.yaml
 # Install with dev dependencies
 pip install -e ".[dev]"
 
-# Run tests
-pytest tests/ -v
+# Install pre-commit hook (runs before every git commit)
+task setup-precommit
+```
 
-# Lint
-ruff check src/ tests/
+### Pre-commit Hook
 
-# Format
-ruff format src/ tests/
+A git pre-commit hook ensures code quality before every commit. It runs:
+
+1. `ruff check` — linting
+2. `ruff format --check` — formatting validation
+3. `pytest` — 28 unit tests
+
+Commits are blocked if any check fails. Run manually with `task precommit`.
+
+### Task Commands
+
+```bash
+# Local checks (fast, no Docker/Dagger needed)
+task precommit      # lint + format-check + test (same as pre-commit hook)
+task lint           # ruff check
+task format         # ruff format (auto-fix)
+task format-check   # ruff format --check (validate only)
+task test           # pytest
+
+# CI pipeline via Dagger (same as GitHub Actions)
+task ci             # full pipeline: lint + format-check + test + security-scan
+task ci-lint        # ruff via dagger
+task ci-format-check # ruff format via dagger
+task ci-test        # pytest via dagger
+task ci-security-scan # bandit via dagger
+task ci-build-image # docker build via dagger
 
 # Run locally
-task run
+task run            # LED_MODE=web, no hardware needed
+task build-image    # docker build
 ```
+
+### CI/CD
+
+GitHub Actions runs the same Dagger pipeline on every push and PR via the reusable [`call-python-validation.yaml`](https://github.com/stuttgart-things/github-workflow-templates) workflow, which calls the [`stuttgart-things/dagger/python`](https://github.com/stuttgart-things/dagger/tree/main/python) module.
+
+| Job | Check |
+|-----|-------|
+| Lint-Python | `ruff check` |
+| Format-Check-Python | `ruff format --check` |
+| Test-Python | `pytest` |
+| Security-Scan-Python | `bandit` |
 
 ## Related Projects
 

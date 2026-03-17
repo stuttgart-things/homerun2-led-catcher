@@ -11,7 +11,8 @@ homerun2-led-catcher — Python microservice that consumes messages from Redis S
 - **LED Matrix**: `rpi-rgb-led-matrix` Python bindings (optional, for Raspberry Pi)
 - **Web**: FastAPI + HTMX + SSE (sse-starlette) for simulator UI
 - **Build**: Dockerfile (multi-stage), no ko (Python project)
-- **CI**: Dagger modules (`dagger/main.go`), Taskfile
+- **CI**: Dagger module `stuttgart-things/dagger/python`, GitHub Actions, Taskfile
+- **Pre-commit**: Git hook runs `task precommit` (lint + format-check + test) before every commit
 - **Deploy**: KCL manifests (`kcl/`), Kubernetes
 - **Infra**: GitHub Actions, semantic-release, renovate
 
@@ -31,6 +32,14 @@ homerun2-led-catcher — Python microservice that consumes messages from Redis S
 - Use conventional commits: `fix:`, `feat:`, `test:`, `chore:`, `docs:`
 - End with `Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>` when Claude authored
 - Include `Closes #<issue-number>` to auto-close issues
+
+### Pre-commit hook
+
+A git pre-commit hook runs `task precommit` before every commit. This executes ruff lint, ruff format check, and pytest. Commits are blocked if any check fails. Install with `task setup-precommit`.
+
+### Before creating a PR
+
+Always run `task precommit` (or `task ci` for the full Dagger pipeline) before creating a PR. The same checks run in GitHub Actions via the reusable `call-python-validation.yaml` workflow.
 
 ## Code Conventions
 
@@ -64,11 +73,11 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | Component | Description |
 |-----------|-------------|
 | `consumer/` | Redis Stream consumer with consumer groups |
-| `handlers/` | Log handler, health endpoint, LED/web handlers (future) |
+| `handlers/` | Log handler, LED handler, health endpoint |
 | `models/` | Message and CaughtMessage dataclasses |
 | `config/` | Env var loading, logging setup |
-| `display/` | LED matrix display modes (future, Milestone 2) |
-| `profile/` | YAML profile loading + rule matching (future, Milestone 2) |
+| `display/` | LED matrix display modes (static, scroll, ticker, image, GIF) |
+| `profile/` | YAML profile loading + rule matching |
 | `web/` | HTMX simulator with SSE (future, Milestone 3) |
 
 ## Key Paths
@@ -76,9 +85,15 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/__main__.py` — entrypoint, signal handling, handler composition
 - `src/led_catcher/consumer/redis_consumer.py` — RedisConsumer with JSON.GET payload resolution
 - `src/led_catcher/handlers/log_handler.py` — severity-aware structured logging
+- `src/led_catcher/handlers/led_handler.py` — LED matrix display handler
 - `src/led_catcher/handlers/health.py` — FastAPI health endpoint
 - `src/led_catcher/config/settings.py` — Config dataclass, env loading, JSON log formatter
 - `src/led_catcher/models/message.py` — Message + CaughtMessage dataclasses
+- `src/led_catcher/profile/engine.py` — YAML profile loading, rule matching, Jinja2 templating
+- `src/led_catcher/display/matrix.py` — rpi-rgb-led-matrix wrapper (no-op fallback)
+- `src/led_catcher/display/modes.py` — display mode implementations
+- `dagger/main.go` — Dagger CI module (delegates to stuttgart-things/dagger/python)
+- `.github/workflows/build-test.yaml` — GitHub Actions CI workflow
 
 ## Environment Variables
 
@@ -105,22 +120,26 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 # Install with dev dependencies
 pip install -e ".[dev]"
 
-# Unit tests (no Redis needed)
-pytest tests/ -v
+# Install pre-commit hook (runs lint + format-check + test before every commit)
+task setup-precommit
 
-# Lint
-ruff check src/ tests/
+# Pre-commit checks (same as what the hook runs)
+task precommit
+
+# Individual checks
+task lint              # ruff check
+task format-check      # ruff format --check
+task test              # pytest
+
+# Full CI pipeline via Dagger (same as GitHub Actions)
+task ci                # lint + format-check + test + security-scan
+task ci-lint           # ruff via dagger
+task ci-format-check   # ruff format via dagger
+task ci-test           # pytest via dagger
+task ci-security-scan  # bandit via dagger
+task ci-build-image    # docker build via dagger
 
 # Run locally (web mode, no hardware)
-LED_MODE=web LOG_FORMAT=text python -m led_catcher
-
-# Build Docker image
-docker build -t homerun2-led-catcher:local .
-
-# Task shortcuts
-task install
-task lint
-task test
 task run
 ```
 
