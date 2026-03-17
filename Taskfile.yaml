@@ -182,6 +182,30 @@ tasks:
       REGISTRY_URL: ttl.sh
       TAG: 1h
 
+  ci-push-kustomize:
+    desc: Render KCL and push kustomize base as OCI artifact to ttl.sh
+    cmds:
+      - |
+        dagger call -m {{ .KCL_MODULE }} \
+        push-kustomize-base \
+        --source ./kcl \
+        --parameters-file ./tests/kcl-deploy-profile.yaml \
+        --address {{ .KUSTOMIZE_REPO }} \
+        --tag {{ .TAG }} \
+        --progress plain
+    vars:
+      KCL_MODULE: github.com/stuttgart-things/dagger/kcl@{{ .DAGGER_MODULE_VERSION }}
+      DAGGER_MODULE_VERSION: v0.86.0
+      KUSTOMIZE_REPO: ttl.sh/stuttgart-things/homerun2-led-catcher-kustomize
+      TAG: 1h
+
+  pages-local:
+    desc: Build mkdocs pages locally
+    cmds:
+      - pip install -q mkdocs-material
+      - mkdocs build -d public
+      - echo "Pages built in ./public — open public/index.html"
+
   branch:
     desc: Create branch from main
     cmds:

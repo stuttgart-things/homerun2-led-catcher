@@ -1,0 +1,11 @@
+site_name: homerun2-led-catcher
+site_description: RGB LED matrix catcher for homerun2 — displays notifications on LED matrix with HTMX web simulator
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Hardware Setup: hardware-setup.md
+  - Profile Reference: profile-reference.md
+  - Deployment: deployment.md
+  - Development: development.md
+plugins:
+  - techdocs-core
