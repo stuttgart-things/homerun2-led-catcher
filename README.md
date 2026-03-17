@@ -181,35 +181,71 @@ Commits are blocked if any check fails. Run manually with `task precommit`.
 
 ```bash
 # Local checks (fast, no Docker/Dagger needed)
-task precommit      # lint + format-check + test (same as pre-commit hook)
-task lint           # ruff check
-task format         # ruff format (auto-fix)
-task format-check   # ruff format --check (validate only)
-task test           # pytest
+task precommit         # lint + format-check + test (same as pre-commit hook)
+task lint              # ruff check
+task format            # ruff format (auto-fix)
+task format-check      # ruff format --check
+task test              # pytest
 
-# CI pipeline via Dagger (same as GitHub Actions)
-task ci             # full pipeline: lint + format-check + test + security-scan
-task ci-lint        # ruff via dagger
-task ci-format-check # ruff format via dagger
-task ci-test        # pytest via dagger
-task ci-security-scan # bandit via dagger
-task ci-build-image # docker build via dagger
+# Stage 1: Push — validation via Dagger (same as GH Actions on push)
+task ci                # lint + format-check + test + security-scan
 
-# Run locally
-task run            # LED_MODE=web, no hardware needed
-task build-image    # docker build
+# Stage 2: PR — full verification (same as GH Actions on PR)
+task ci-pr             # Stage 1 + docker build → ttl.sh → trivy scan
+
+# Stage 3: Release — full release (same as GH Actions release)
+task ci-release        # Stage 2 + kustomize OCI push
+
+# Individual Dagger tasks
+task ci-lint           # ruff via dagger
+task ci-format-check   # ruff format via dagger
+task ci-test           # pytest via dagger
+task ci-security-scan  # bandit via dagger
+task ci-docker-build   # docker build via dagger
+task ci-docker-push    # build + push to ttl.sh
+task ci-trivy-scan     # trivy scan image on ttl.sh
+task ci-push-kustomize # KCL → kustomize OCI to ttl.sh
+
+# Other
+task run               # LED_MODE=web, no hardware needed
+task build-image       # docker build locally
+task pages-local       # build mkdocs locally
 ```
 
-### CI/CD
+### CI/CD Pipeline
 
-GitHub Actions runs the same Dagger pipeline on every push and PR via the reusable [`call-python-validation.yaml`](https://github.com/stuttgart-things/github-workflow-templates) workflow, which calls the [`stuttgart-things/dagger/python`](https://github.com/stuttgart-things/dagger/tree/main/python) module.
+Every stage runs the same Dagger modules locally (`task`) and in GitHub Actions:
 
-| Job | Check |
-|-----|-------|
-| Lint-Python | `ruff check` |
-| Format-Check-Python | `ruff format --check` |
-| Test-Python | `pytest` |
-| Security-Scan-Python | `bandit` |
+```
+Pre-commit (git hook)
+│  ruff check + ruff format --check + pytest
+│
+├─► Push to branch (Stage 1: build-test.yaml)
+│     Lint, Format-Check, Test, Security-Scan
+│     Local: task ci
+│
+├─► Pull Request (Stage 2: build-test.yaml)
+│     Stage 1 + Docker build → push ttl.sh → Trivy scan
+│     Local: task ci-pr
+│
+├─► Merge to main (Stage 3: release.yaml)
+│     Semantic release → Docker push GHCR → KCL kustomize OCI push
+│     Local: task ci-release
+│
+└─► After release (pages.yaml)
+      mkdocs-material → GitHub Pages
+      Local: task pages-local
+```
+
+All CI uses reusable Dagger modules from [`stuttgart-things/dagger`](https://github.com/stuttgart-things/dagger):
+
+| Module | Functions |
+|--------|-----------|
+| `python` | lint, format-check, test, security-scan, build-image |
+| `docker` | build, push |
+| `trivy` | scan-image |
+| `kcl` | push-kustomize-base |
+| `release` | semantic |
 
 ## Related Projects
 

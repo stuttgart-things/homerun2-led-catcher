@@ -56,13 +56,25 @@ task format-check   # ruff format --check
 task test           # pytest
 ```
 
-### Full CI Pipeline (Dagger, same as GitHub Actions)
+### CI Pipeline Stages (Dagger, same as GitHub Actions)
+
+Each stage mirrors what GitHub Actions runs at that point:
 
 ```bash
-task ci               # lint + format-check + test + security-scan
-task ci-docker-build  # build Docker image
-task ci-docker-push   # build + push to ttl.sh
-task ci-trivy-scan    # build + push + trivy vulnerability scan
+# Stage 1: Push — validation only
+task ci                # lint + format-check + test + security-scan
+
+# Stage 2: PR — full verification
+task ci-pr             # Stage 1 + docker build → ttl.sh → trivy scan
+
+# Stage 3: Release — full release
+task ci-release        # Stage 2 + kustomize OCI push
+
+# Individual tasks
+task ci-docker-push    # build + push to ttl.sh
+task ci-trivy-scan     # trivy scan on ttl.sh
+task ci-push-kustomize # KCL → kustomize OCI
+task pages-local       # mkdocs build
 ```
 
 ## Project Structure
@@ -96,9 +108,19 @@ src/led_catcher/
 
 ## Git Workflow
 
-1. Create branch: `git checkout -b feat/<issue>-<desc>`
-2. Make changes, commits are gated by pre-commit hook
-3. Push: `git push -u origin <branch>`
-4. Create PR: `gh pr create --base main`
-5. CI runs automatically (lint, format, test, security, docker build+scan)
-6. Merge: `gh pr merge <N> --merge --delete-branch`
+```
+1. git checkout -b feat/<issue>-<desc>
+2. Make changes
+3. git commit           ← pre-commit hook: lint + format-check + test
+4. git push             ← GH Actions Stage 1: lint, format, test, security
+5. gh pr create         ← GH Actions Stage 2: + docker build → ttl.sh → trivy
+6. gh pr merge          ← GH Actions Stage 3: semantic-release → GHCR → kustomize OCI
+                        ← GH Actions: mkdocs → GitHub Pages
+```
+
+Run any stage locally before pushing:
+
+```bash
+task ci       # before push (Stage 1)
+task ci-pr    # before creating PR (Stage 2)
+```

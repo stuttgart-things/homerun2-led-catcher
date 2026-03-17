@@ -3,8 +3,21 @@ version: 3
 vars:
   BRANCH:
     sh: if [ $(git rev-parse --abbrev-ref HEAD) != "main" ]; then echo $(git rev-parse --abbrev-ref HEAD); else echo main; fi
+  DAGGER_MODULE_VERSION: v0.86.0
+  PYTHON_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
+  DOCKER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
+  TRIVY_MODULE: github.com/stuttgart-things/dagger/trivy@{{ .DAGGER_MODULE_VERSION }}
+  KCL_MODULE: github.com/stuttgart-things/dagger/kcl@{{ .DAGGER_MODULE_VERSION }}
+  REPOSITORY_NAME: stuttgart-things/homerun2-led-catcher
+  REGISTRY_URL: ttl.sh
+  TAG: 1h
 
 tasks:
+
+  ## ──────────────────────────────────────────────
+  ## LOCAL (fast, no Docker/Dagger needed)
+  ## ──────────────────────────────────────────────
+
   install:
     desc: Install package in editable mode with dev dependencies
     cmds:
@@ -16,7 +29,7 @@ tasks:
       - ruff check src/ tests/
 
   format:
-    desc: Format code with ruff
+    desc: Format code with ruff (auto-fix)
     cmds:
       - ruff format src/ tests/
 
@@ -30,25 +43,6 @@ tasks:
     cmds:
       - pytest tests/ -v
 
-  precommit:
-    desc: Run pre-commit checks (lint, format-check, test) - fast local checks
-    cmds:
-      - task: lint
-      - task: format-check
-      - task: test
-
-  setup-precommit:
-    desc: Install git pre-commit hook that runs task precommit
-    cmds:
-      - |
-        cat > .git/hooks/pre-commit << 'HOOK'
-        #!/bin/sh
-        echo "Running pre-commit checks..."
-        task precommit
-        HOOK
-        chmod +x .git/hooks/pre-commit
-        echo "Pre-commit hook installed"
-
   run:
     desc: Run led-catcher locally (LED_MODE=web, no hardware needed)
     env:
@@ -59,12 +53,47 @@ tasks:
       - python -m led_catcher
 
   build-image:
-    desc: Build Docker image
+    desc: Build Docker image locally
     cmds:
       - docker build -t homerun2-led-catcher:local .
 
+  pages-local:
+    desc: Build mkdocs pages locally
+    cmds:
+      - pip install -q mkdocs-material
+      - mkdocs build -d public
+      - echo "Pages built in ./public"
+
+  ## ──────────────────────────────────────────────
+  ## PRE-COMMIT (runs before every git commit)
+  ## ──────────────────────────────────────────────
+
+  precommit:
+    desc: "Pre-commit checks: lint + format-check + test"
+    cmds:
+      - task: lint
+      - task: format-check
+      - task: test
+
+  setup-precommit:
+    desc: Install git pre-commit hook
+    cmds:
+      - |
+        cat > .git/hooks/pre-commit << 'HOOK'
+        #!/bin/sh
+        echo "Running pre-commit checks..."
+        task precommit
+        HOOK
+        chmod +x .git/hooks/pre-commit
+        echo "Pre-commit hook installed"
+
+  ## ──────────────────────────────────────────────
+  ## STAGE 1: PUSH (same as GH Actions on push)
+  ## lint + format-check + test + security-scan
+  ## ──────────────────────────────────────────────
+
   ci:
-    desc: Run full CI pipeline locally via Dagger (same as GitHub Actions)
+    desc: "Stage 1 — full validation via Dagger (same as push CI)"
     cmds:
       - task: ci-lint
       - task: ci-format-check
@@ -74,71 +103,42 @@ tasks:
   ci-lint:
     desc: Run ruff linter via Dagger
     cmds:
-      - |
-        dagger call -m {{ .DAGGER_MODULE }} \
-        lint --src . \
-        --progress plain
-    vars:
-      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
-      DAGGER_MODULE_VERSION: v0.86.0
+      - dagger call -m {{ .PYTHON_MODULE }} lint --src . --progress plain
 
   ci-format-check:
     desc: Run ruff format check via Dagger
     cmds:
-      - |
-        dagger call -m {{ .DAGGER_MODULE }} \
-        format-check --src . \
-        --progress plain
-    vars:
-      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
-      DAGGER_MODULE_VERSION: v0.86.0
+      - dagger call -m {{ .PYTHON_MODULE }} format-check --src . --progress plain
 
   ci-test:
     desc: Run pytest via Dagger
     cmds:
-      - |
-        dagger call -m {{ .DAGGER_MODULE }} \
-        test --src . \
-        --progress plain
-    vars:
-      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
-      DAGGER_MODULE_VERSION: v0.86.0
+      - dagger call -m {{ .PYTHON_MODULE }} test --src . --progress plain
 
   ci-security-scan:
     desc: Run bandit security scan via Dagger
     cmds:
-      - |
-        dagger call -m {{ .DAGGER_MODULE }} \
-        security-scan --src . \
-        --progress plain
-    vars:
-      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
-      DAGGER_MODULE_VERSION: v0.86.0
+      - dagger call -m {{ .PYTHON_MODULE }} security-scan --src . --progress plain
 
-  ci-build-image:
-    desc: Build Docker image via Dagger (python module)
+  ## ──────────────────────────────────────────────
+  ## STAGE 2: PR (same as GH Actions on PR)
+  ## build → push ttl.sh → trivy scan
+  ## ──────────────────────────────────────────────
+
+  ci-pr:
+    desc: "Stage 2 — full PR pipeline: validate + build + push + scan"
     cmds:
-      - |
-        dagger call -m {{ .DAGGER_MODULE }} \
-        build-image --src . \
-        --progress plain
-    vars:
-      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
-      DAGGER_MODULE_VERSION: v0.86.0
+      - task: ci
+      - task: ci-docker-push
+      - task: ci-trivy-scan
 
   ci-docker-build:
-    desc: Build Docker image via Dagger (docker module)
+    desc: Build Docker image via Dagger
     cmds:
-      - |
-        dagger call -m {{ .DOCKER_MODULE }} \
-        build --src . \
-        --progress plain
-    vars:
-      DOCKER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
-      DAGGER_MODULE_VERSION: v0.86.0
+      - dagger call -m {{ .DOCKER_MODULE }} build --src . --progress plain
 
   ci-docker-push:
-    desc: Build and push Docker image to ttl.sh (ephemeral, 1h TTL)
+    desc: Build and push Docker image to ttl.sh
     cmds:
       - |
         dagger call -m {{ .DOCKER_MODULE }} \
@@ -148,63 +148,46 @@ tasks:
         --registry-url {{ .REGISTRY_URL }} \
         --tag {{ .TAG }} \
         --progress plain
-    vars:
-      DOCKER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
-      DAGGER_MODULE_VERSION: v0.86.0
-      REPOSITORY_NAME: stuttgart-things/homerun2-led-catcher
-      REGISTRY_URL: ttl.sh
-      TAG: 1h
 
   ci-trivy-scan:
-    desc: Scan Docker image with Trivy (push to ttl.sh first, then scan)
+    desc: Trivy scan image on ttl.sh
     cmds:
       - |
-        IMAGE_REF=$(dagger call -m {{ .DOCKER_MODULE }} \
-        build --src . \
-        push \
-        --repository-name {{ .REPOSITORY_NAME }} \
-        --registry-url {{ .REGISTRY_URL }} \
-        --tag {{ .TAG }} \
-        --progress plain)
-        echo "Pushed image: ${IMAGE_REF}"
         dagger call -m {{ .TRIVY_MODULE }} \
         scan-image \
-        --image-ref "${IMAGE_REF}" \
+        --image-ref {{ .REGISTRY_URL }}/{{ .REPOSITORY_NAME }}:{{ .TAG }} \
         --progress plain \
         export --path /tmp/trivy-report.json
-        echo "Trivy report saved to /tmp/trivy-report.json"
-        cat /tmp/trivy-report.json | python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('ParsedSummary',{}); print(f'Vulnerabilities: {json.dumps(s, indent=2)}')" 2>/dev/null || cat /tmp/trivy-report.json | head -50
-    vars:
-      DOCKER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
-      TRIVY_MODULE: github.com/stuttgart-things/dagger/trivy@{{ .DAGGER_MODULE_VERSION }}
-      DAGGER_MODULE_VERSION: v0.86.0
-      REPOSITORY_NAME: stuttgart-things/homerun2-led-catcher
-      REGISTRY_URL: ttl.sh
-      TAG: 1h
+        echo "Report: /tmp/trivy-report.json"
+
+  ## ──────────────────────────────────────────────
+  ## STAGE 3: RELEASE (same as GH Actions release)
+  ## semantic-release → GHCR push → kustomize OCI
+  ## ──────────────────────────────────────────────
+
+  ci-release:
+    desc: "Stage 3 — full release: validate + build + push GHCR + kustomize OCI"
+    cmds:
+      - task: ci
+      - task: ci-docker-push
+      - task: ci-trivy-scan
+      - task: ci-push-kustomize
 
   ci-push-kustomize:
-    desc: Render KCL and push kustomize base as OCI artifact to ttl.sh
+    desc: Render KCL and push kustomize base as OCI artifact
     cmds:
       - |
         dagger call -m {{ .KCL_MODULE }} \
         push-kustomize-base \
         --source ./kcl \
         --parameters-file ./tests/kcl-deploy-profile.yaml \
-        --address {{ .KUSTOMIZE_REPO }} \
+        --address {{ .REGISTRY_URL }}/{{ .REPOSITORY_NAME }}-kustomize \
         --tag {{ .TAG }} \
         --progress plain
-    vars:
-      KCL_MODULE: github.com/stuttgart-things/dagger/kcl@{{ .DAGGER_MODULE_VERSION }}
-      DAGGER_MODULE_VERSION: v0.86.0
-      KUSTOMIZE_REPO: ttl.sh/stuttgart-things/homerun2-led-catcher-kustomize
-      TAG: 1h
 
-  pages-local:
-    desc: Build mkdocs pages locally
-    cmds:
-      - pip install -q mkdocs-material
-      - mkdocs build -d public
-      - echo "Pages built in ./public — open public/index.html"
+  ## ──────────────────────────────────────────────
+  ## GIT WORKFLOW
+  ## ──────────────────────────────────────────────
 
   branch:
     desc: Create branch from main
