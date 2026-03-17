@@ -39,6 +39,69 @@ tasks:
     cmds:
       - docker build -t homerun2-led-catcher:local .
 
+  ci:
+    desc: Run full CI pipeline locally via Dagger (same as GitHub Actions)
+    cmds:
+      - task: ci-lint
+      - task: ci-format-check
+      - task: ci-test
+      - task: ci-security-scan
+
+  ci-lint:
+    desc: Run ruff linter via Dagger
+    cmds:
+      - |
+        dagger call -m {{ .DAGGER_MODULE }} \
+        lint --src . \
+        --progress plain
+    vars:
+      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
+      DAGGER_MODULE_VERSION: v0.86.0
+
+  ci-format-check:
+    desc: Run ruff format check via Dagger
+    cmds:
+      - |
+        dagger call -m {{ .DAGGER_MODULE }} \
+        format-check --src . \
+        --progress plain
+    vars:
+      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
+      DAGGER_MODULE_VERSION: v0.86.0
+
+  ci-test:
+    desc: Run pytest via Dagger
+    cmds:
+      - |
+        dagger call -m {{ .DAGGER_MODULE }} \
+        test --src . \
+        --progress plain
+    vars:
+      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
+      DAGGER_MODULE_VERSION: v0.86.0
+
+  ci-security-scan:
+    desc: Run bandit security scan via Dagger
+    cmds:
+      - |
+        dagger call -m {{ .DAGGER_MODULE }} \
+        security-scan --src . \
+        --progress plain
+    vars:
+      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
+      DAGGER_MODULE_VERSION: v0.86.0
+
+  ci-build-image:
+    desc: Build Docker image via Dagger
+    cmds:
+      - |
+        dagger call -m {{ .DAGGER_MODULE }} \
+        build-image --src . \
+        --progress plain
+    vars:
+      DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
+      DAGGER_MODULE_VERSION: v0.86.0
+
   branch:
     desc: Create branch from main
     cmds:
