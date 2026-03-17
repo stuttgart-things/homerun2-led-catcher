@@ -14,7 +14,7 @@ jobs:
   python-validation:
     uses: stuttgart-things/github-workflow-templates/.github/workflows/call-python-validation.yaml@main
     with:
-      runs-on: ghr-homerun2-led-catcher
+      runs-on: dagger
       module-name: homerun2-led-catcher
       python-version: "3.12-slim"
       ruff-version: "0.8.6"
