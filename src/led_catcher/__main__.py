@@ -11,7 +11,9 @@ import uvicorn
 from led_catcher.config import Config, load_config, setup_logging
 from led_catcher.consumer import RedisConsumer
 from led_catcher.handlers.health import health_app, set_build_info
+from led_catcher.handlers.led_handler import create_led_handler
 from led_catcher.handlers.log_handler import log_handler
+from led_catcher.profile import load_profile
 
 logger = logging.getLogger("led_catcher")
 
@@ -21,12 +23,19 @@ def _build_handlers(cfg: Config) -> list:
     handlers = [log_handler]
 
     mode = cfg.led_mode.lower()
+    if mode not in ("led", "web", "full"):
+        logger.warning("unknown LED_MODE '%s', defaulting to 'full'", mode)
+        mode = "full"
+
+    profile = load_profile(cfg.profile_path)
+
     if mode in ("led", "full"):
-        # LED handler will be added in Milestone 2 (#5)
-        logger.info("LED handler: not yet implemented, skipping")
+        handlers.append(create_led_handler(profile))
+        logger.info("LED handler active")
+
     if mode in ("web", "full"):
         # Web handler will be added in Milestone 3 (#7)
-        logger.info("Web handler: not yet implemented, skipping")
+        logger.info("web handler: not yet implemented, skipping")
 
     logger.info("active mode: %s, handlers: %d", mode, len(handlers))
     return handlers
