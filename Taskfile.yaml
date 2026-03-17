@@ -116,7 +116,7 @@ tasks:
       DAGGER_MODULE_VERSION: v0.86.0
 
   ci-build-image:
-    desc: Build Docker image via Dagger
+    desc: Build Docker image via Dagger (python module)
     cmds:
       - |
         dagger call -m {{ .DAGGER_MODULE }} \
@@ -124,6 +124,17 @@ tasks:
         --progress plain
     vars:
       DAGGER_MODULE: github.com/stuttgart-things/dagger/python@{{ .DAGGER_MODULE_VERSION }}
+      DAGGER_MODULE_VERSION: v0.86.0
+
+  ci-docker-build:
+    desc: Build Docker image via Dagger (docker module)
+    cmds:
+      - |
+        dagger call -m {{ .DAGGER_MODULE }} \
+        build --src . \
+        --progress plain
+    vars:
+      DAGGER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
       DAGGER_MODULE_VERSION: v0.86.0
 
   branch:
