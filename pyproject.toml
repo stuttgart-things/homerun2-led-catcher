@@ -47,6 +47,9 @@ led-catcher = "led_catcher.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+led_catcher = ["web/templates/*.html", "web/static/*"]
+
 [tool.ruff]
 target-version = "py311"
 line-length = 120
