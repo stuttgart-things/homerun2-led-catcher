@@ -6,6 +6,7 @@ Imports all resources and exports manifests
 import namespace
 import serviceaccount
 import configmap
+import profile_configmap
 import secret
 import deploy
 import service
@@ -17,6 +18,7 @@ manifests = [
         namespace.namespace
         serviceaccount.serviceAccount
         configmap.configMap
+        profile_configmap.profileConfigMap
         secret.secretRedis
         deploy.deployment
         service.service

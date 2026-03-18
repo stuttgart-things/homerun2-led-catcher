@@ -52,6 +52,31 @@ schema LedCatcher:
     # Profile path inside container
     profilePath: str = "/config/profile.yaml"
 
+    # Profile data (display rules YAML content)
+    profileData: str = """\
+displayRules:
+  default-info:
+    systems: ["*"]
+    severity: [INFO, SUCCESS]
+    kind: text
+    text: "{{ system }}: {{ title }}"
+    font: myfont.bdf
+    duration: 5
+  warning-all:
+    systems: ["*"]
+    severity: [WARNING]
+    kind: text
+    text: "{{ system }}: {{ title }}"
+    font: myfont.bdf
+    duration: 5
+colors:
+  error: [255, 0, 0]
+  warning: [255, 165, 0]
+  success: [0, 255, 0]
+  info: [0, 100, 255]
+  debug: [128, 128, 128]
+"""
+
     # Extra environment variables
     extraEnvVars: {str:str} = {}
 
