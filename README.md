@@ -254,7 +254,7 @@ All CI uses reusable Dagger modules from [`stuttgart-things/dagger`](https://git
 | [homerun2-omni-pitcher](https://github.com/stuttgart-things/homerun2-omni-pitcher) | HTTP producer — sends messages to Redis Streams |
 | [homerun2-core-catcher](https://github.com/stuttgart-things/homerun2-core-catcher) | Core consumer — log/CLI/web display modes |
 | [homerun2-light-catcher](https://github.com/stuttgart-things/homerun2-light-catcher) | WLED light consumer — triggers LED strip effects |
-| [homerun2-git-pitcher](https://github.com/stuttgart-things/homerun2-git-pitcher) | GitHub watcher — polls repos and pitches events to Redis Streams |
+| [homerun2-git-pitcher](https://github.com/stuttgart-things/homerun2-git-pitcher) | GitHub watcher — polls GitHub API for events and pitches them to Redis Streams |
 | [homerun-library](https://github.com/stuttgart-things/homerun-library) | Shared Go library for message types and Redis ops |
 
 ## License
