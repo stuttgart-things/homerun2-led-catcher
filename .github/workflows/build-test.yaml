@@ -19,7 +19,7 @@ jobs:
   python-validation:
     uses: stuttgart-things/github-workflow-templates/.github/workflows/call-python-validation.yaml@main
     with:
-      runs-on: dagger
+      runs-on: dagger-labul
       module-name: homerun2-led-catcher
       python-version: "3.12-slim"
       ruff-version: "0.8.6"
@@ -30,7 +30,7 @@ jobs:
 
   build-push-scan:
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
-    runs-on: dagger
+    runs-on: dagger-labul
     needs: python-validation
     environment: k8s
     steps:
