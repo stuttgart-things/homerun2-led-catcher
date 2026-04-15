@@ -96,7 +96,7 @@ async def _run(cfg: Config) -> None:
         "configuration loaded",
         extra={
             "redis_addr": f"{cfg.redis.addr}:{cfg.redis.port}",
-            "stream": cfg.redis.stream,
+            "streams": cfg.redis.streams,
             "consumer_group": cfg.consumer_group,
         },
     )

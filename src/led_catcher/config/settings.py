@@ -6,7 +6,7 @@ import logging
 import os
 import socket
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -14,7 +14,12 @@ class RedisConfig:
     addr: str = "localhost"
     port: int = 6379
     password: str = ""
-    stream: str = "messages"
+    streams: list[str] = field(default_factory=lambda: ["messages"])
+
+    @property
+    def stream(self) -> str:
+        """Legacy single-stream accessor — returns the first configured stream."""
+        return self.streams[0] if self.streams else "messages"
 
 
 @dataclass
@@ -36,12 +41,32 @@ def _getenv(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
 
 
+def parse_streams(streams_env: str, stream_fallback: str) -> list[str]:
+    """Resolve the list of Redis streams to subscribe to.
+
+    Precedence:
+      1. REDIS_STREAMS — comma-separated, whitespace-trimmed, empty entries dropped
+      2. REDIS_STREAM  — legacy single-stream env var, wrapped in a one-element list
+      3. ["messages"]  — hardcoded default
+
+    Legacy single-stream deployments keep working unchanged.
+    """
+    if streams_env:
+        parts = [p.strip() for p in streams_env.split(",")]
+        parts = [p for p in parts if p]
+        if parts:
+            return parts
+    if stream_fallback:
+        return [stream_fallback]
+    return ["messages"]
+
+
 def load_config() -> Config:
     redis_cfg = RedisConfig(
         addr=_getenv("REDIS_ADDR", "localhost"),
         port=int(_getenv("REDIS_PORT", "6379")),
         password=_getenv("REDIS_PASSWORD", ""),
-        stream=_getenv("REDIS_STREAM", "messages"),
+        streams=parse_streams(_getenv("REDIS_STREAMS", ""), _getenv("REDIS_STREAM", "")),
     )
 
     consumer_name = _getenv("CONSUMER_NAME", "")
@@ -106,6 +131,7 @@ class _JsonFormatter(logging.Formatter):
             "date",
             "redis_addr",
             "stream",
+            "streams",
             "consumer_group",
             "error",
             "object_id",
