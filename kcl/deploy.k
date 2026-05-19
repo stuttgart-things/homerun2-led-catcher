@@ -53,16 +53,23 @@ deployment = {
                                 name: "REDIS_PORT"
                                 value: str(config.redisPort)
                             }
-                            if config.redisPassword:
-                                {
-                                    name: "REDIS_PASSWORD"
-                                    valueFrom: {
-                                        secretKeyRef: {
-                                            name: "{}-redis".format(config.name)
-                                            key: "password"
-                                        }
+                            {
+                                # Always reference the Secret via secretKeyRef so
+                                # out-of-band Secret providers (ESO in per-PR
+                                # preview namespaces) populate REDIS_PASSWORD
+                                # without rebuilding the kustomize OCI. optional:
+                                # True lets the pod start when the Secret is
+                                # absent (Redis without auth) — the client then
+                                # connects unauthenticated.
+                                name: "REDIS_PASSWORD"
+                                valueFrom: {
+                                    secretKeyRef: {
+                                        name: "{}-redis".format(config.name)
+                                        key: "password"
+                                        optional: True
                                     }
                                 }
+                            }
                             {
                                 name: "REDIS_STREAM"
                                 value: config.redisStream
