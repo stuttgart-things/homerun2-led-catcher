@@ -2,12 +2,24 @@
 name: Comment Preview URL on PR
 on:
   pull_request:
-    types: [opened, reopened]
+    # Note: deliberately no `opened`. When a PR is created with `preview`
+    # already attached, GitHub fires both `opened` and `labeled` events
+    # back-to-back, and the comment template can't dedupe across two
+    # near-simultaneous runs — you end up with two URL comments. The
+    # `labeled` event handles the at-creation case just fine on its own.
+    types: [reopened, labeled]
     branches:
       - main
 
 jobs:
   comment:
+    # `labeled`: post only when the just-added label is `preview` (the
+    # label the AppSet keys on). `reopened`: post only if the PR still
+    # has the `preview` label attached — `reopened` doesn't fire a
+    # `labeled` event, so we have to check the current label set.
+    if: |
+      (github.event.action == 'labeled' && github.event.label.name == 'preview') ||
+      (github.event.action == 'reopened' && contains(github.event.pull_request.labels.*.name, 'preview'))
     uses: stuttgart-things/github-workflow-templates/.github/workflows/call-comment-preview-url.yaml@main
     with:
       hostname-prefix: led-pr
