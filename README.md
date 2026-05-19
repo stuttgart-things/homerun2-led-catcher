@@ -224,8 +224,12 @@ Pre-commit (git hook)
 │     Lint, Format-Check, Test, Security-Scan
 │     Local: task ci
 │
-├─► Pull Request (Stage 2: build-test.yaml)
-│     Stage 1 + Docker build → push ttl.sh → Trivy scan
+├─► Pull Request (Stage 2: build-scan-image.yaml + push-kustomize-pr.yaml)
+│     Docker build → push GHCR `pr-<num>-<sha>` → Trivy scan
+│     Kustomize OCI → push GHCR `<repo>-kustomize:pr-<num>-<sha>`
+│     ArgoCD AppSet spins up a preview env at
+│     `led-pr-<num>.homerun2-dev.sthings-vsphere.labul.sva.de`
+│     (add the `preview` label to the PR to opt in)
 │     Local: task ci-pr
 │
 ├─► Merge to main (Stage 3: release.yaml)
