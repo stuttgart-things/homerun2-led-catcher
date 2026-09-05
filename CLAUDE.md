@@ -73,7 +73,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | Component | Description |
 |-----------|-------------|
 | `consumer/` | Redis Stream consumer with consumer groups |
-| `handlers/` | Log handler, LED handler, health endpoint |
+| `handlers/` | Log handler, LED handler, health endpoint, `/streams` control endpoint |
 | `models/` | Message and CaughtMessage dataclasses |
 | `config/` | Env var loading, logging setup |
 | `display/` | LED matrix display modes (static, scroll, ticker, image, GIF) |
@@ -88,6 +88,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/handlers/log_handler.py` — severity-aware structured logging
 - `src/led_catcher/handlers/led_handler.py` — LED matrix display handler
 - `src/led_catcher/handlers/health.py` — FastAPI health endpoint
+- `src/led_catcher/handlers/control.py` — `GET`/`POST /streams` runtime stream switching
 - `src/led_catcher/config/settings.py` — Config dataclass, env loading, JSON log formatter
 - `src/led_catcher/models/message.py` — Message + CaughtMessage dataclasses
 - `src/led_catcher/profile/engine.py` — YAML profile loading, rule matching, Jinja2 templating
@@ -105,7 +106,8 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `REDIS_ADDR` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_PASSWORD` | *(empty)* | Redis password |
-| `REDIS_STREAM` | `messages` | Redis stream to consume |
+| `REDIS_STREAMS` | *(empty)* | Comma-separated streams to consume — takes precedence over `REDIS_STREAM` |
+| `REDIS_STREAM` | `messages` | Single stream to consume (legacy; used when `REDIS_STREAMS` is unset) |
 | `CONSUMER_GROUP` | `homerun2-led-catcher` | Consumer group name |
 | `CONSUMER_NAME` | hostname | Consumer name within group |
 | `LED_MODE` | `full` | Operating mode: `led`, `web`, `full` |
