@@ -1,13 +1,16 @@
 # Hardware Setup
 
+Panel, HAT and library setup. For the full install on a Pi — venv, service unit
+and test tooling — see [Raspberry Pi Deployment](raspberry-pi-deployment.md).
+
 ## Requirements
 
 - Raspberry Pi 3B+ or newer (Pi 4 recommended)
 - 64x64 RGB LED Matrix panel (HUB75 interface)
 - Adafruit RGB Matrix HAT or Bonnet (with PWM)
 - 5V 4A power supply for the LED matrix
-- Raspberry Pi OS (Legacy) Lite — Debian Bullseye, 32-bit
-- Python 3.11+
+- Raspberry Pi OS Bookworm Lite (64-bit) — ships Python 3.11
+- Python 3.11+ (Bullseye's 3.9 is too old for this project)
 
 ## Wiring
 
@@ -42,24 +45,37 @@ sudo reboot
 
 ## Install and Run
 
+Bookworm marks the system Python as externally managed, and the `rgbmatrix`
+bindings land in the system site-packages — so use a venv that can see them:
+
 ```bash
-# Install the package
-pip install .
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -e .
 
 # Run with LED matrix only
 sudo LED_MODE=led \
   REDIS_ADDR=<redis-host> \
-  PROFILE_PATH=profile.yaml \
-  python -m led_catcher
+  PROFILE_PATH=$PWD/profile.yaml \
+  .venv/bin/python -m led_catcher
 
 # Run with LED matrix + web simulator
 sudo LED_MODE=full \
   REDIS_ADDR=<redis-host> \
-  PROFILE_PATH=profile.yaml \
-  python -m led_catcher
+  PROFILE_PATH=$PWD/profile.yaml \
+  .venv/bin/python -m led_catcher
 ```
 
-> `sudo` is required for GPIO access on the Raspberry Pi.
+> `sudo` is required for GPIO access. The library drops privileges again once the
+> panel is initialised (`drop_privileges=True`).
+
+Feed the panel with test messages:
+
+```bash
+.venv/bin/led-catcher-publish --demo
+```
+
+See [Raspberry Pi Deployment](raspberry-pi-deployment.md) for the systemd unit and
+the full test workflow.
 
 ## Matrix Configuration
 

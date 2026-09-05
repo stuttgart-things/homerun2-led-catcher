@@ -79,6 +79,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `display/` | LED matrix display modes (static, scroll, ticker, image, GIF) |
 | `profile/` | YAML profile loading + rule matching |
 | `web/` | HTMX simulator with SSE (future, Milestone 3) |
+| `tools/` | Operator CLI: `led-catcher-publish` test producer |
 
 ## Key Paths
 
@@ -91,9 +92,11 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/models/message.py` — Message + CaughtMessage dataclasses
 - `src/led_catcher/profile/engine.py` — YAML profile loading, rule matching, Jinja2 templating
 - `src/led_catcher/display/matrix.py` — rpi-rgb-led-matrix wrapper (no-op fallback)
-- `src/led_catcher/display/modes.py` — display mode implementations
+- `src/led_catcher/display/modes.py` — display mode implementations, asset lookup
+- `src/led_catcher/tools/publish.py` — `led-catcher-publish` test message producer
 - `dagger/main.go` — Dagger CI module (delegates to stuttgart-things/dagger/python)
 - `.github/workflows/build-test.yaml` — GitHub Actions CI workflow
+- `docs/raspberry-pi-deployment.md` — native Pi install, systemd unit, on-device testing
 
 ## Environment Variables
 
@@ -113,6 +116,9 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `VERSION` | `dev` | Build version (injected at build time) |
 | `COMMIT` | `unknown` | Git commit (injected at build time) |
 | `DATE` | `unknown` | Build date (injected at build time) |
+| `FONTS_DIR` | `<repo>/fonts` | Directory searched for BDF fonts |
+| `VISUAL_AID_DIR` | `<repo>/visual_aid` | Directory searched for images/GIFs |
+| `LED_DEFAULT_FONT` | `6x10.bdf` | Fallback font when a rule names a missing one |
 
 ## Testing
 
@@ -141,6 +147,11 @@ task ci-build-image    # docker build via dagger
 
 # Run locally (web mode, no hardware)
 task run
+
+# Feed the stream with test messages (needs redis-stack — RedisJSON)
+task redis-stack       # local redis-stack on :6379
+task publish-demo      # one message per display mode
+task publish -- --system demo --severity error --title "disk full"
 ```
 
 ## Reference Projects

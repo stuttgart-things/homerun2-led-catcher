@@ -7,6 +7,7 @@ static, text (scroll), ticker, image, gif.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -14,9 +15,40 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# Base paths for assets
-FONTS_DIR = Path(__file__).parent.parent.parent.parent / "fonts"
-VISUAL_AID_DIR = Path(__file__).parent.parent.parent.parent / "visual_aid"
+# Font used when a profile references a font that cannot be found.
+DEFAULT_FONT = "6x10.bdf"
+
+# src/led_catcher — the installed package itself
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent
+# Repo root when running from the src/ layout (editable install or checkout)
+_REPO_ROOT = _PACKAGE_DIR.parent.parent
+
+
+def _asset_dirs(env_var: str, name: str) -> list[Path]:
+    """Candidate directories for an asset kind, in lookup order.
+
+    Read at call time so the environment can be changed after import
+    (tests, and deployments that set the env in a systemd unit).
+    """
+    dirs: list[Path] = []
+    override = os.environ.get(env_var, "").strip()
+    if override:
+        dirs.append(Path(override))
+    dirs.append(_REPO_ROOT / name)  # checkout / editable install
+    dirs.append(_PACKAGE_DIR / name)  # assets shipped inside the package
+    dirs.append(Path("/app") / name)  # container layout
+    dirs.append(Path.cwd() / name)  # process working directory
+    return dirs
+
+
+def fonts_dirs() -> list[Path]:
+    """Directories searched for BDF fonts. Override with $FONTS_DIR."""
+    return _asset_dirs("FONTS_DIR", "fonts")
+
+
+def visual_aid_dirs() -> list[Path]:
+    """Directories searched for images and GIFs. Override with $VISUAL_AID_DIR."""
+    return _asset_dirs("VISUAL_AID_DIR", "visual_aid")
 
 
 def display_event(matrix, config) -> None:
@@ -133,27 +165,46 @@ def _show_gif(matrix, config) -> None:
     matrix.swap()
 
 
+def _search(dirs: list[Path], name: str) -> Path | None:
+    """Find `name` in `dirs`, or as an absolute/relative path of its own."""
+    for directory in dirs:
+        candidate = directory / name
+        if candidate.is_file():
+            return candidate
+    direct = Path(name)
+    if direct.is_file():
+        return direct
+    return None
+
+
 def _resolve_font(font_name: str) -> str:
-    """Resolve font name to full path."""
-    path = FONTS_DIR / font_name
-    if path.exists():
-        return str(path)
-    # Fallback: try absolute path
-    if Path(font_name).exists():
-        return font_name
-    logger.debug("font not found: %s, using path as-is", font_name)
+    """Resolve a font name to a full path, falling back to the default font.
+
+    rpi-rgb-led-matrix aborts the process when LoadFont() gets a path that does
+    not exist, so an unresolvable name must never be handed through as-is.
+    """
+    dirs = fonts_dirs()
+    found = _search(dirs, font_name)
+    if found is not None:
+        return str(found)
+
+    fallback_name = os.environ.get("LED_DEFAULT_FONT", "").strip() or DEFAULT_FONT
+    fallback = _search(dirs, fallback_name)
+    if fallback is not None:
+        logger.warning("font '%s' not found, falling back to '%s'", font_name, fallback_name)
+        return str(fallback)
+
+    logger.error(
+        "font '%s' not found and fallback '%s' is missing — searched %s",
+        font_name,
+        fallback_name,
+        ", ".join(str(d) for d in dirs),
+    )
     return font_name
 
 
 def _resolve_image(image_name: str) -> Path | None:
-    """Resolve image name to full path."""
+    """Resolve an image name to a full path."""
     if not image_name:
         return None
-    path = VISUAL_AID_DIR / image_name
-    if path.exists():
-        return path
-    # Try absolute path
-    abs_path = Path(image_name)
-    if abs_path.exists():
-        return abs_path
-    return None
+    return _search(visual_aid_dirs(), image_name)

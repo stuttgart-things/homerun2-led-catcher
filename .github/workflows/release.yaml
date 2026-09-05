@@ -37,7 +37,7 @@ jobs:
       - name: Semantic release
         uses: dagger/dagger-for-github@v8.4.1
         with:
-          version: "0.20.0"
+          version: "0.21.8"
           verb: call
           module: github.com/stuttgart-things/dagger/release@v0.86.0
           args: >-
@@ -66,25 +66,36 @@ jobs:
         if: steps.version-after.outputs.new_release == 'true'
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Build and push versioned image to GHCR
+      # arm64 is required for Raspberry Pi deployments (LED_MODE=led/full on hardware)
+      - name: Set up QEMU
+        if: steps.version-after.outputs.new_release == 'true'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Buildx
+        if: steps.version-after.outputs.new_release == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push versioned image to GHCR (amd64 + arm64)
         if: steps.version-after.outputs.new_release == 'true'
         run: |
           VERSION="${{ steps.version-after.outputs.version }}"
-          docker build \
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
             --build-arg VERSION=${VERSION} \
             --build-arg COMMIT=${{ github.sha }} \
             --build-arg DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
             -t ghcr.io/${{ github.repository }}:${VERSION} \
             -t ghcr.io/${{ github.repository }}:latest \
+            --push \
             .
-          docker push ghcr.io/${{ github.repository }}:${VERSION}
-          docker push ghcr.io/${{ github.repository }}:latest
 
       - name: Push kustomize base
         if: steps.version-after.outputs.new_release == 'true'
         uses: dagger/dagger-for-github@v8.4.1
         with:
-          version: "0.20.0"
+          version: "0.21.8"
           verb: call
           module: github.com/stuttgart-things/dagger/kcl@v0.86.0
           args: >-
@@ -107,7 +118,7 @@ jobs:
           VERSION="${{ steps.version-after.outputs.version }}"
           EXISTING_BODY=$(gh release view "$VERSION" --json body --jq '.body')
           ARTIFACTS="### Artifacts\n\n| Artifact | Reference |\n|----------|-----------|"
-          ARTIFACTS="${ARTIFACTS}\n| **Image** | \`ghcr.io/${{ github.repository }}:${VERSION}\` |"
+          ARTIFACTS="${ARTIFACTS}\n| **Image** | \`ghcr.io/${{ github.repository }}:${VERSION}\` (linux/amd64, linux/arm64) |"
           ARTIFACTS="${ARTIFACTS}\n| **Kustomize** | \`ghcr.io/stuttgart-things/homerun2-led-catcher-kustomize:${VERSION}\` |"
           gh release edit "$VERSION" --notes "$(printf '%s\n\n%b' "$EXISTING_BODY" "$ARTIFACTS")"
 

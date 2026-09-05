@@ -52,6 +52,37 @@ tasks:
     cmds:
       - python -m led_catcher
 
+  fetch-fonts:
+    desc: Download the full upstream BDF font set into fonts/
+    vars:
+      FONTS_URL: https://api.github.com/repos/hzeller/rpi-rgb-led-matrix/contents/fonts
+    cmds:
+      - |
+        curl -sSf {{ .FONTS_URL }} \
+          | grep -o '"download_url": "[^"]*\.bdf"' \
+          | cut -d'"' -f4 \
+          | while read -r url; do
+              echo "fetching $(basename "${url}")"
+              curl -sSf -o "fonts/$(basename "${url}")" "${url}"
+            done
+        echo "fonts/ now contains $(ls -1 fonts/*.bdf | wc -l) BDF fonts"
+
+  publish:
+    desc: "Publish one test message into the stream (REDIS_ADDR etc. from env)"
+    cmds:
+      - led-catcher-publish {{ .CLI_ARGS }}
+
+  publish-demo:
+    desc: Publish a message for every display mode (hardware smoke test)
+    cmds:
+      - led-catcher-publish --demo
+
+  redis-stack:
+    desc: Run a local redis-stack (RedisJSON) for testing
+    cmds:
+      - docker run -d --rm --name redis-stack -p 6379:6379 redis/redis-stack-server:latest
+      - echo "redis-stack up on localhost:6379"
+
   build-image:
     desc: Build Docker image locally
     cmds:

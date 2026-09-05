@@ -43,6 +43,7 @@ led = [
 
 [project.scripts]
 led-catcher = "led_catcher.__main__:main"
+led-catcher-publish = "led_catcher.tools.publish:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
