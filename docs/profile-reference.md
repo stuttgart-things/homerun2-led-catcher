@@ -10,7 +10,7 @@ Display profiles define how messages are rendered on the LED matrix. Each profil
 displayRules:
   <rule-name>:
     systems: [<system1>, <system2>, ...]  # or ["*"] for wildcard
-    severity: [<severity1>, ...]           # ERROR, WARNING, INFO, SUCCESS, DEBUG
+    severity: [<severity1>, ...]           # ERROR, CRITICAL, WARNING, INFO, SUCCESS, DEBUG
     kind: <display-mode>                   # static, text, ticker, image, gif
     text: "<jinja2-template>"              # for text modes
     image: "<filename>"                    # for image/gif modes
@@ -19,11 +19,16 @@ displayRules:
 
 colors:
   error: [255, 0, 0]
+  critical: [255, 0, 0]
   warning: [255, 165, 0]
   success: [0, 255, 0]
   info: [0, 100, 255]
   debug: [128, 128, 128]
 ```
+
+A severity with no entry here renders **white**, which is the colour that means
+"unknown severity" — so a severity the bus carries but the map omits is a bug,
+not a default.
 
 ## Display Modes
 
@@ -40,7 +45,15 @@ colors:
 1. Rules are evaluated in order (first match wins)
 2. A rule matches if the message's system is in the rule's `systems` list (or `"*"`)
 3. AND the message's severity is in the rule's `severity` list
-4. If no rule matches, the message is skipped (logged but not displayed)
+4. If no rule matches, the message is not displayed on the matrix and is
+   logged at `info` level saying so. In the web simulator it is still recorded,
+   coloured by its severity rather than rendered by a rule.
+
+Cover every severity your producers actually emit. Until 2026-09-05 the shipped
+default had no rule for `ERROR` or `CRITICAL`: on the matrix those were dropped
+(logged at `debug`, invisible at the default `LOG_LEVEL`) and in the simulator
+they were recorded in the same blue as `INFO`. A failing alert looked exactly
+like a working one.
 
 ## Jinja2 Templates
 
@@ -83,6 +96,14 @@ displayRules:
     font: 6x10.bdf
     duration: 5
 
+  error-all:
+    systems: ["*"]
+    severity: [ERROR, CRITICAL]
+    kind: text
+    text: "{{ system }}: {{ title }}"
+    font: myfont.bdf
+    duration: 5
+
   default-info:
     systems: ["*"]
     severity: [INFO, SUCCESS]
@@ -93,6 +114,7 @@ displayRules:
 
 colors:
   error: [255, 0, 0]
+  critical: [255, 0, 0]
   warning: [255, 165, 0]
   success: [0, 255, 0]
   info: [0, 100, 255]

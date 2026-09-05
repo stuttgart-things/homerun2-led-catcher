@@ -18,7 +18,15 @@ def create_led_handler(profile: Profile):
     def led_handler(msg: CaughtMessage) -> None:
         config = match_rule(profile, msg.message)
         if config is None:
-            logger.debug("no matching display rule for system=%s severity=%s", msg.message.system, msg.message.severity)
+            # Deliberately not debug: at the default LOG_LEVEL=info a dropped
+            # message left no trace at all, so a missing rule for a severity
+            # that matters (ERROR/CRITICAL had none until 2026-09-05) was
+            # indistinguishable from a quiet bus.
+            logger.info(
+                "no matching display rule, message NOT displayed: system=%s severity=%s",
+                msg.message.system,
+                msg.message.severity,
+            )
             return
 
         logger.info(

@@ -18,11 +18,22 @@ def create_web_handler(profile: Profile, tracker: EventTracker):
     def web_handler(msg: CaughtMessage) -> None:
         config = match_rule(profile, msg.message)
 
-        color = (0, 100, 255)  # default info blue
         kind = "text"
         if config is not None:
             color = config.color
             kind = config.kind
+        else:
+            # No rule matched. Falling back to a fixed info blue made an
+            # unmatched CRITICAL indistinguishable from an INFO in the
+            # simulator — the wrong answer looked like a right one. Use the
+            # severity's own colour so a hole in the profile shows as a
+            # message that is coloured but never rendered on the matrix.
+            logger.info(
+                "no matching display rule for system=%s severity=%s — recorded uncoloured by rule",
+                msg.message.system,
+                msg.message.severity,
+            )
+            color = profile.colors.get(msg.message.severity.lower(), (255, 255, 255))
 
         event = LedEvent(
             timestamp=datetime.now().strftime("%H:%M:%S"),

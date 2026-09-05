@@ -142,6 +142,14 @@ displayRules:
     font: 6x10.bdf
     duration: 3
 
+  error-all:
+    systems: ["*"]
+    severity: [ERROR, CRITICAL]
+    kind: text
+    text: "{{ system }}: {{ title }}"
+    font: myfont.bdf
+    duration: 5
+
   default-info:
     systems: ["*"]
     severity: [INFO, SUCCESS]
@@ -152,6 +160,7 @@ displayRules:
 
 colors:
   error: [255, 0, 0]
+  critical: [255, 0, 0]
   warning: [255, 165, 0]
   success: [0, 255, 0]
   info: [0, 100, 255]
