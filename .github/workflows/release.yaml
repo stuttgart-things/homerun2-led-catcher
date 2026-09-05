@@ -69,7 +69,7 @@ jobs:
       # arm64 is required for Raspberry Pi deployments (LED_MODE=led/full on hardware)
       - name: Set up QEMU
         if: steps.version-after.outputs.new_release == 'true'
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
