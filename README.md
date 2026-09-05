@@ -109,7 +109,8 @@ All configuration is via environment variables:
 | `REDIS_ADDR` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_PASSWORD` | *(empty)* | Redis password |
-| `REDIS_STREAM` | `messages` | Redis stream to consume |
+| `REDIS_STREAMS` | *(empty)* | Comma-separated streams to consume — takes precedence over `REDIS_STREAM` |
+| `REDIS_STREAM` | `messages` | Single stream to consume (legacy; used when `REDIS_STREAMS` is unset) |
 | `CONSUMER_GROUP` | `homerun2-led-catcher` | Consumer group name |
 | `CONSUMER_NAME` | hostname | Consumer name within group |
 | `LED_MODE` | `full` | Operating mode: `led`, `web`, `full` |
@@ -120,6 +121,50 @@ All configuration is via environment variables:
 | `FONTS_DIR` | `<repo>/fonts` | Directory searched for BDF fonts |
 | `VISUAL_AID_DIR` | `<repo>/visual_aid` | Directory searched for images and GIFs |
 | `LED_DEFAULT_FONT` | `6x10.bdf` | Fallback font when a rule names a missing one |
+
+## Runtime Stream Switching
+
+The subscribed streams are set from the environment at startup, but can be
+switched at runtime on the health/web port — no redeploy, no restart.
+
+This exists for the single-panel case: `REDIS_STREAMS` is additive, so showing
+*only* a live scoreboard means subscribing to that stream alone and returning to
+`messages` when the match is over.
+
+```bash
+# What is currently subscribed
+curl -s http://localhost:8080/streams
+
+# Switch to a scoreboard stream only
+curl -s -X POST http://localhost:8080/streams \
+  -H 'content-type: application/json' \
+  -d '{"streams": ["tabletennis"]}'
+
+# Back to normal operation
+curl -s -X POST http://localhost:8080/streams \
+  -H 'content-type: application/json' \
+  -d '{"streams": ["messages"]}'
+```
+
+`POST /streams` replaces the whole set and answers with the resulting streams
+plus what was added and removed.
+
+**Backlog handling.** A consumer group's last-delivered-id stays put while a
+stream is unsubscribed, so re-adding it would replay everything that piled up in
+the meantime. Streams being *added* are therefore advanced to `$` before the
+switch takes effect. Pass `{"skipBacklog": false}` where the backlog is wanted.
+Streams already in the set are left alone, so `["messages"]` →
+`["messages", "scale"]` does not disturb `messages`.
+
+**Notes.**
+
+- The switch is picked up on the next `XREADGROUP` iteration, so it lands within
+  the 5s block timeout.
+- The set is not persisted. A restart returns to the environment configuration —
+  a crashed pod comes back in normal operation rather than stuck in scoreboard
+  mode.
+- The endpoint is unauthenticated, like the existing health and web routes. Fine
+  while the port is cluster-internal.
 
 ## Display Profile
 

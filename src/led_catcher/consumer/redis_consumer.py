@@ -16,6 +16,22 @@ logger = logging.getLogger(__name__)
 
 MessageHandler = Callable[[CaughtMessage], None]
 
+BLOCK_MS = 5000
+"""XREADGROUP block timeout — also the upper bound for a runtime stream switch to take effect."""
+
+
+def normalize_streams(streams: list[str]) -> list[str]:
+    """Trim, drop empties and de-duplicate while preserving order."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw in streams:
+        name = raw.strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        result.append(name)
+    return result
+
 
 class RedisConsumer:
     """Consumes messages from Redis Streams using consumer groups.
@@ -26,6 +42,9 @@ class RedisConsumer:
     3. JSON.GET to resolve full payload from Redis JSON
     4. Call registered handlers
     5. XACK to acknowledge
+
+    The subscribed stream set is mutable state, not a read-through to ``Config``,
+    so it can be replaced at runtime via :meth:`set_streams`.
     """
 
     def __init__(self, cfg: Config, handlers: list[MessageHandler]) -> None:
@@ -33,6 +52,21 @@ class RedisConsumer:
         self._handlers = handlers
         self._running = False
         self._client: aioredis.Redis | None = None
+        self._streams: list[str] = normalize_streams(cfg.redis.streams) or ["messages"]
+        self._switch_lock = asyncio.Lock()
+
+    @property
+    def streams(self) -> list[str]:
+        """The currently subscribed streams."""
+        return list(self._streams)
+
+    @property
+    def consumer_group(self) -> str:
+        return self._cfg.consumer_group
+
+    @property
+    def consumer_name(self) -> str:
+        return self._cfg.consumer_name
 
     async def _connect(self) -> aioredis.Redis:
         if self._client is None:
@@ -44,9 +78,9 @@ class RedisConsumer:
             )
         return self._client
 
-    async def _ensure_group(self, client: aioredis.Redis) -> None:
+    async def _ensure_group(self, client: aioredis.Redis, streams: list[str]) -> None:
         group = self._cfg.consumer_group
-        for stream in self._cfg.redis.streams:
+        for stream in streams:
             try:
                 groups = await client.xinfo_groups(stream)
                 if not any(g["name"] == group for g in groups):
@@ -55,6 +89,52 @@ class RedisConsumer:
             except aioredis.ResponseError:
                 await client.xgroup_create(stream, group, id="0", mkstream=True)
                 logger.info("created consumer group %s on stream %s (new stream)", group, stream)
+
+    async def set_streams(self, streams: list[str], skip_backlog: bool = True) -> dict:
+        """Replace the subscribed stream set.
+
+        Streams being *added* get their consumer group created if missing and — unless
+        ``skip_backlog`` is False — have the group's last-delivered-id advanced to ``$``
+        so that whatever accumulated while unsubscribed is not replayed onto the panel.
+
+        Streams already in the set are left untouched: switching
+        ``["messages"] -> ["messages", "scale"]`` does not disturb ``messages``.
+
+        The new set is picked up by the read loop on its next iteration, i.e. within
+        ``BLOCK_MS``.
+
+        Returns a summary dict with the resulting set plus the added/removed streams.
+        """
+        requested = normalize_streams(streams)
+        if not requested:
+            raise ValueError("streams must contain at least one non-empty name")
+
+        async with self._switch_lock:
+            current = set(self._streams)
+            added = [s for s in requested if s not in current]
+            removed = [s for s in self._streams if s not in set(requested)]
+
+            if added:
+                client = await self._connect()
+                await self._ensure_group(client, added)
+                if skip_backlog:
+                    group = self._cfg.consumer_group
+                    for stream in added:
+                        await client.xgroup_setid(stream, group, "$")
+                        logger.info("advanced group %s on stream %s to $", group, stream)
+
+            self._streams = requested
+
+        logger.info(
+            "subscribed streams updated",
+            extra={"streams": requested, "consumer_group": self._cfg.consumer_group},
+        )
+        return {
+            "streams": requested,
+            "added": added,
+            "removed": removed,
+            "skipBacklog": skip_backlog,
+        }
 
     async def _resolve_payload(self, client: aioredis.Redis, message_id: str) -> Message | None:
         try:
@@ -74,18 +154,16 @@ class RedisConsumer:
 
     async def run(self) -> None:
         client = await self._connect()
-        await self._ensure_group(client)
+        await self._ensure_group(client, self._streams)
 
-        streams = self._cfg.redis.streams
         group = self._cfg.consumer_group
         consumer = self._cfg.consumer_name
-        stream_ids = {s: ">" for s in streams}
 
         logger.info(
             "consumer starting",
             extra={
                 "redis_addr": self._cfg.redis.addr,
-                "streams": streams,
+                "streams": self._streams,
                 "consumer_group": group,
             },
         )
@@ -93,12 +171,14 @@ class RedisConsumer:
         self._running = True
         while self._running:
             try:
+                # Rebuilt every iteration so a runtime switch is picked up here.
+                stream_ids = {s: ">" for s in self._streams}
                 entries = await client.xreadgroup(
                     groupname=group,
                     consumername=consumer,
                     streams=stream_ids,
                     count=10,
-                    block=5000,
+                    block=BLOCK_MS,
                 )
                 if not entries:
                     continue
