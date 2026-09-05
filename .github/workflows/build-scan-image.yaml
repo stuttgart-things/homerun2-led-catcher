@@ -17,7 +17,7 @@ permissions:
 jobs:
   build-pr:
     if: github.event_name == 'pull_request'
-    runs-on: dagger-labul
+    runs-on: dagger-labda
     environment: k8s
     outputs:
       image-ref: ${{ steps.push.outputs.image-ref }}
@@ -50,7 +50,7 @@ jobs:
     needs: build-pr
     uses: stuttgart-things/github-workflow-templates/.github/workflows/call-dagger-trivy-image-scan.yaml@main
     with:
-      runs-on: dagger-labul
+      runs-on: dagger-labda
       image-ref: ${{ needs.build-pr.outputs.image-ref }}
       continue-on-error: true
     secrets: inherit # pragma: allowlist secret

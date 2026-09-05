@@ -16,7 +16,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
-    runs-on: dagger-labul
+    runs-on: dagger-labda
     environment: k8s
 
     steps:
