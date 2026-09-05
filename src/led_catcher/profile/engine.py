@@ -34,7 +34,7 @@ class DisplayConfig:
     kind: str = "text"  # static, text, ticker, image, gif
     text: str = ""
     image: str = ""
-    font: str = "myfont.bdf"
+    font: str = "6x10.bdf"
     duration: float = 5.0
     color: tuple[int, int, int] = (255, 255, 255)
     systems: list[str] = field(default_factory=list)
@@ -85,7 +85,7 @@ def load_profile(path: str | Path) -> Profile:
             kind=rule_data.get("kind", "text"),
             text=rule_data.get("text", ""),
             image=rule_data.get("image", ""),
-            font=rule_data.get("font", "myfont.bdf"),
+            font=rule_data.get("font", "6x10.bdf"),
             duration=float(rule_data.get("duration", 5)),
             systems=rule_data.get("systems", []),
             severity=severity_list,

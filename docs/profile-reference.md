@@ -72,7 +72,7 @@ displayRules:
     severity: [INFO]
     kind: static
     text: "{{ message | replace('WEIGHT: ','') }}g"
-    font: myfont.bdf
+    font: 6x10.bdf
     duration: 3
 
   warning-all:
@@ -80,7 +80,7 @@ displayRules:
     severity: [WARNING]
     kind: text
     text: "{{ system }}: {{ title }}"
-    font: myfont.bdf
+    font: 6x10.bdf
     duration: 5
 
   default-info:
@@ -88,7 +88,7 @@ displayRules:
     severity: [INFO, SUCCESS]
     kind: text
     text: "{{ system }}: {{ title }}"
-    font: myfont.bdf
+    font: 6x10.bdf
     duration: 5
 
 colors:

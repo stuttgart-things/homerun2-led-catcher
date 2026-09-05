@@ -34,13 +34,16 @@ The health endpoint is available at `http://localhost:8080/healthz`.
 
 ## Raspberry Pi Hardware Setup
 
+> Full walkthrough — Ansible prep, venv, systemd unit, on-device testing:
+> [docs/raspberry-pi-deployment.md](docs/raspberry-pi-deployment.md)
+
 ### Requirements
 
 - Raspberry Pi (3B+ or newer recommended)
 - 64x64 RGB LED Matrix panel
 - Adafruit RGB Matrix HAT or Bonnet
-- Raspberry Pi OS (Legacy) Lite — Debian Bullseye, 32-bit
-- Python 3.11+
+- Raspberry Pi OS Bookworm Lite (64-bit) — ships Python 3.11
+- Python 3.11+ (Bullseye's 3.9 is too old)
 
 ### Build rpi-rgb-led-matrix
 
@@ -66,17 +69,36 @@ sudo reboot
 
 ### Run on Pi
 
+The `rgbmatrix` bindings install into the system Python, so the venv needs
+`--system-site-packages` to see them:
+
 ```bash
-pip install .
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -e .
 
 # With hardware LED matrix
-sudo LED_MODE=led REDIS_ADDR=<redis-host> PROFILE_PATH=profile.yaml python -m led_catcher
+sudo LED_MODE=led REDIS_ADDR=<redis-host> PROFILE_PATH=$PWD/profile.yaml .venv/bin/python -m led_catcher
 
 # With hardware + web simulator
-sudo LED_MODE=full REDIS_ADDR=<redis-host> PROFILE_PATH=profile.yaml python -m led_catcher
+sudo LED_MODE=full REDIS_ADDR=<redis-host> PROFILE_PATH=$PWD/profile.yaml .venv/bin/python -m led_catcher
 ```
 
-> **Note:** `sudo` is required for GPIO access on the Raspberry Pi.
+> **Note:** `sudo` is required for GPIO access. `rpi-rgb-led-matrix` drops
+> privileges again after initialising the panel.
+
+### Send test messages
+
+`led-catcher-publish` writes into the stream exactly like the pitcher does
+(`JSON.SET` + `XADD messageID=...`), so the panel can be exercised standalone:
+
+```bash
+led-catcher-publish --demo                                    # every display mode
+led-catcher-publish --system demo --severity error --title "disk full"
+led-catcher-publish --count 50 --interval 0.2                 # load test
+led-catcher-publish --dry-run                                 # print payload only
+```
+
+Requires a Redis with the RedisJSON module (redis-stack).
 
 ## Configuration
 
@@ -95,6 +117,9 @@ All configuration is via environment variables:
 | `PROFILE_PATH` | `profile.yaml` | Path to display rules YAML |
 | `LOG_FORMAT` | `json` | Log format: `json` or `text` |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
+| `FONTS_DIR` | `<repo>/fonts` | Directory searched for BDF fonts |
+| `VISUAL_AID_DIR` | `<repo>/visual_aid` | Directory searched for images and GIFs |
+| `LED_DEFAULT_FONT` | `6x10.bdf` | Fallback font when a rule names a missing one |
 
 ## Display Profile
 
@@ -114,7 +139,7 @@ displayRules:
     severity: [INFO]
     kind: static
     text: "{{ message | replace('WEIGHT: ','') }}g"
-    font: myfont.bdf
+    font: 6x10.bdf
     duration: 3
 
   default-info:
@@ -122,7 +147,7 @@ displayRules:
     severity: [INFO, SUCCESS]
     kind: text
     text: "{{ system }}: {{ title }}"
-    font: myfont.bdf
+    font: 6x10.bdf
     duration: 5
 
 colors:

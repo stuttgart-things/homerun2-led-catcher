@@ -60,14 +60,14 @@ displayRules:
     severity: [INFO, SUCCESS]
     kind: text
     text: "{{ system }}: {{ title }}"
-    font: myfont.bdf
+    font: 6x10.bdf
     duration: 5
   warning-all:
     systems: ["*"]
     severity: [WARNING]
     kind: text
     text: "{{ system }}: {{ title }}"
-    font: myfont.bdf
+    font: 6x10.bdf
     duration: 5
 colors:
   error: [255, 0, 0]

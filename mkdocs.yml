@@ -4,6 +4,7 @@ nav:
   - Home: index.md
   - Architecture: architecture.md
   - Hardware Setup: hardware-setup.md
+  - Raspberry Pi Deployment: raspberry-pi-deployment.md
   - Profile Reference: profile-reference.md
   - Deployment: deployment.md
   - Development: development.md
