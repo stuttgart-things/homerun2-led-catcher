@@ -26,6 +26,7 @@ dependencies = [
     "jinja2>=3.1",
     "pillow>=11.0",
     "fastapi>=0.115",
+    "python-multipart>=0.0.20",
     "uvicorn[standard]>=0.34",
     "sse-starlette>=2.0",
 ]

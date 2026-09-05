@@ -50,7 +50,14 @@ def _build_app(cfg: Config, tracker: EventTracker | None, consumer: RedisConsume
     """Build the combined FastAPI app with health + control + optional web simulator."""
     if tracker is not None:
         # Mount health endpoints on the web app
-        app = create_web_app(tracker, cfg.version, cfg.commit, cfg.date)
+        app = create_web_app(
+            tracker,
+            cfg.version,
+            cfg.commit,
+            cfg.date,
+            consumer=consumer,
+            presets=cfg.ui_stream_presets,
+        )
         app.get("/healthz")(health_app.routes[0].endpoint)
         app.get("/health")(health_app.routes[1].endpoint)
     else:
