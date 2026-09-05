@@ -78,7 +78,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `config/` | Env var loading, logging setup |
 | `display/` | LED matrix display modes (static, scroll, ticker, image, GIF) |
 | `profile/` | YAML profile loading + rule matching |
-| `web/` | HTMX simulator with SSE (future, Milestone 3) |
+| `web/` | HTMX simulator with SSE, incl. the header stream control |
 | `tools/` | Operator CLI: `led-catcher-publish` test producer |
 
 ## Key Paths
@@ -89,6 +89,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/handlers/led_handler.py` — LED matrix display handler
 - `src/led_catcher/handlers/health.py` — FastAPI health endpoint
 - `src/led_catcher/handlers/control.py` — `GET`/`POST /streams` runtime stream switching
+- `src/led_catcher/web/app.py` — simulator routes, `/ui/streams` control partial, SSE generator
 - `src/led_catcher/config/settings.py` — Config dataclass, env loading, JSON log formatter
 - `src/led_catcher/models/message.py` — Message + CaughtMessage dataclasses
 - `src/led_catcher/profile/engine.py` — YAML profile loading, rule matching, Jinja2 templating
@@ -113,6 +114,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `LED_MODE` | `full` | Operating mode: `led`, `web`, `full` |
 | `HEALTH_PORT` | `8080` | Health/web server port |
 | `PROFILE_PATH` | `profile.yaml` | Path to display rules YAML |
+| `UI_STREAM_PRESETS` | *(empty)* | Web simulator one-click presets: comma-separated, `\|`-separated within a preset. Defaults to the configured streams as a single preset |
 | `LOG_FORMAT` | `json` | Log format: `json` or `text` |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 | `VERSION` | `dev` | Build version (injected at build time) |

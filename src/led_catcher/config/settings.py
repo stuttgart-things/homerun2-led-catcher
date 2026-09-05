@@ -30,6 +30,7 @@ class Config:
     led_mode: str = "full"  # led, web, full
     health_port: int = 8080
     profile_path: str = "profile.yaml"
+    ui_stream_presets: list[list[str]] = field(default_factory=list)
     log_format: str = "json"
     log_level: str = "info"
     version: str = "dev"
@@ -61,6 +62,36 @@ def parse_streams(streams_env: str, stream_fallback: str) -> list[str]:
     return ["messages"]
 
 
+def parse_stream_presets(presets_env: str, fallback: list[str]) -> list[list[str]]:
+    """Resolve the one-click stream presets offered by the web simulator.
+
+    Grammar: presets are comma-separated, and the streams within one preset are
+    ``|``-separated. ``messages,tabletennis|scale`` yields two buttons — one
+    subscribing to ``messages``, one subscribing to ``tabletennis`` and ``scale``
+    together.
+
+    Whitespace is trimmed, empty entries are dropped, and duplicate presets are
+    collapsed. Falls back to a single preset holding the configured streams, which
+    is a button that does nothing useful — acceptable, because the panel is then
+    already in its normal state.
+    """
+    presets: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+    for entry in presets_env.split(","):
+        group = [s.strip() for s in entry.split("|")]
+        group = [s for s in group if s]
+        if not group or tuple(group) in seen:
+            continue
+        seen.add(tuple(group))
+        presets.append(group)
+
+    if presets:
+        return presets
+
+    configured = [s.strip() for s in fallback if s.strip()]
+    return [configured] if configured else []
+
+
 def load_config() -> Config:
     redis_cfg = RedisConfig(
         addr=_getenv("REDIS_ADDR", "localhost"),
@@ -80,6 +111,7 @@ def load_config() -> Config:
         led_mode=_getenv("LED_MODE", "full"),
         health_port=int(_getenv("HEALTH_PORT", "8080")),
         profile_path=_getenv("PROFILE_PATH", "profile.yaml"),
+        ui_stream_presets=parse_stream_presets(_getenv("UI_STREAM_PRESETS", ""), redis_cfg.streams),
         log_format=_getenv("LOG_FORMAT", "json"),
         log_level=_getenv("LOG_LEVEL", "info"),
         version=_getenv("VERSION", "dev"),

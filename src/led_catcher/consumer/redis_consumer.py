@@ -53,12 +53,27 @@ class RedisConsumer:
         self._running = False
         self._client: aioredis.Redis | None = None
         self._streams: list[str] = normalize_streams(cfg.redis.streams) or ["messages"]
+        self._configured_streams: list[str] = list(self._streams)
         self._switch_lock = asyncio.Lock()
 
     @property
     def streams(self) -> list[str]:
         """The currently subscribed streams."""
         return list(self._streams)
+
+    @property
+    def configured_streams(self) -> list[str]:
+        """The streams configured via the environment at startup.
+
+        Never changed by :meth:`set_streams`, so the web simulator can tell an
+        override apart from normal operation and offer a way back.
+        """
+        return list(self._configured_streams)
+
+    @property
+    def is_overridden(self) -> bool:
+        """True when the active set differs from the environment configuration."""
+        return self._streams != self._configured_streams
 
     @property
     def consumer_group(self) -> str:

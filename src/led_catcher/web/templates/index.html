@@ -76,6 +76,75 @@
 
         .stat-badge strong { color: var(--accent-orange); }
 
+        /* Stream control */
+        .stream-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .stream-label { color: rgba(255,255,255,0.75); }
+
+        .stream-override {
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            padding: 3px 6px;
+            border-radius: 3px;
+            background: rgba(245,158,11,0.25);
+            color: var(--severity-warning);
+            border: 1px solid var(--severity-warning);
+        }
+
+        /* Divider so the active value is not read as a duplicate of the active button */
+        .stream-presets {
+            display: flex;
+            gap: 4px;
+            padding-left: 10px;
+            margin-left: 2px;
+            border-left: 1px solid rgba(255,255,255,0.25);
+        }
+
+        .stream-preset, .stream-reset {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.12);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.25);
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .stream-preset:hover, .stream-reset:hover {
+            background: rgba(255,255,255,0.25);
+            border-color: rgba(255,255,255,0.5);
+        }
+
+        .stream-preset.active {
+            background: rgba(249,115,22,0.25);
+            border-color: var(--accent-orange);
+            color: var(--accent-orange);
+            cursor: default;
+        }
+
+        .stream-reset {
+            background: rgba(245,158,11,0.2);
+            border-color: var(--severity-warning);
+            color: var(--severity-warning);
+        }
+
+        .stream-error {
+            font-size: 0.65rem;
+            color: var(--severity-error);
+            background: rgba(239,68,68,0.15);
+            padding: 3px 6px;
+            border-radius: 3px;
+        }
+
         /* Main layout */
         .main {
             display: grid;
@@ -268,6 +337,12 @@
                     hx-swap="innerHTML">{{ total_events }}</strong>
             </div>
             <div class="stat-badge">Mode: <strong>web</strong></div>
+            <div class="stat-badge stream-badge"
+                 id="streams-control"
+                 hx-ext="sse"
+                 sse-connect="/api/events/stream"
+                 sse-swap="streams-update"
+                 hx-swap="innerHTML">{{ streams_control }}</div>
         </div>
     </div>
 

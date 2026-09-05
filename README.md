@@ -116,6 +116,7 @@ All configuration is via environment variables:
 | `LED_MODE` | `full` | Operating mode: `led`, `web`, `full` |
 | `HEALTH_PORT` | `8080` | Health/web server port |
 | `PROFILE_PATH` | `profile.yaml` | Path to display rules YAML |
+| `UI_STREAM_PRESETS` | *(empty)* | Web simulator one-click presets: comma-separated, `\|`-separated within a preset. Defaults to the configured streams as a single preset |
 | `LOG_FORMAT` | `json` | Log format: `json` or `text` |
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 | `FONTS_DIR` | `<repo>/fonts` | Directory searched for BDF fonts |
@@ -155,6 +156,31 @@ the meantime. Streams being *added* are therefore advanced to `$` before the
 switch takes effect. Pass `{"skipBacklog": false}` where the backlog is wanted.
 Streams already in the set are left alone, so `["messages"]` →
 `["messages", "scale"]` does not disturb `messages`.
+
+### From the web simulator
+
+The same switch is available in the simulator header, so a scorekeeper at the
+table does not need a terminal. Buttons come from `UI_STREAM_PRESETS`:
+
+```bash
+UI_STREAM_PRESETS=messages,tabletennis        # two buttons
+UI_STREAM_PRESETS=messages,tabletennis|scale  # two buttons, the second subscribes to both
+```
+
+Presets are comma-separated; the streams inside one preset are `|`-separated.
+Unset, the control offers the configured `REDIS_STREAMS` as its single preset.
+
+When the active set differs from the environment configuration the header shows
+an `overridden` badge and a `reset` button that switches back — the guard against
+the panel silently sitting in scoreboard mode after an abandoned match.
+
+The control posts form-encoded to `POST /ui/streams` and gets the rendered
+partial back; the JSON API stays as it is for machine callers. A switch made
+through the JSON API or by another client reaches the open UI over SSE, so the
+header never shows a stale set.
+
+The control only exists in `LED_MODE=web` and `full`. In `led` mode there is no
+web app and the JSON API remains the only path.
 
 **Notes.**
 
