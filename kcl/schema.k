@@ -55,9 +55,9 @@ schema LedCatcher:
     # Profile data (display rules YAML content)
     profileData: str = """\
 displayRules:
-  default-info:
+  error-all:
     systems: ["*"]
-    severity: [INFO, SUCCESS]
+    severity: [ERROR, CRITICAL]
     kind: text
     text: "{{ system }}: {{ title }}"
     font: 6x10.bdf
@@ -69,8 +69,16 @@ displayRules:
     text: "{{ system }}: {{ title }}"
     font: 6x10.bdf
     duration: 5
+  default-info:
+    systems: ["*"]
+    severity: [INFO, SUCCESS]
+    kind: text
+    text: "{{ system }}: {{ title }}"
+    font: 6x10.bdf
+    duration: 5
 colors:
   error: [255, 0, 0]
+  critical: [255, 0, 0]
   warning: [255, 165, 0]
   success: [0, 255, 0]
   info: [0, 100, 255]

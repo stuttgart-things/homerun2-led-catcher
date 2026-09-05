@@ -23,6 +23,7 @@ class LedEvent:
     def severity_css(self) -> str:
         return {
             "error": "severity-error",
+            "critical": "severity-error",
             "warning": "severity-warning",
             "success": "severity-success",
             "info": "severity-info",
