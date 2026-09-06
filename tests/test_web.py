@@ -103,6 +103,30 @@ async def test_web_app_api_events():
 
 
 @pytest.mark.asyncio
+async def test_web_app_api_events_carries_the_payload():
+    """The scoreboard canvas draws from `message`; without it a score event
+    reaches the simulator as a coloured row with nothing to render."""
+    tracker = EventTracker()
+    tracker.record(
+        LedEvent(
+            timestamp="12:00:00",
+            severity="info",
+            system="tabletennis",
+            title="8:6",
+            kind="score",
+            message="points=8:6;serve=b",
+        )
+    )
+    app = create_web_app(tracker)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/events")
+    data = resp.json()
+    assert data[0]["kind"] == "score"
+    assert data[0]["message"] == "points=8:6;serve=b"
+
+
+@pytest.mark.asyncio
 async def test_web_app_empty_events():
     tracker = EventTracker()
     app = create_web_app(tracker)

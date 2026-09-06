@@ -108,6 +108,10 @@ def create_web_app(
                 "title": e.title,
                 "author": e.author,
                 "kind": e.kind,
+                # The scoreboard canvas parses its layout out of this; the text
+                # modes ignore it. Without it a score event reaches the
+                # simulator as a coloured row with nothing to draw.
+                "message": e.message,
                 "color": e.color_hex(),
             }
             for e in tracker.recent(50)

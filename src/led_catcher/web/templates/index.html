@@ -528,6 +528,166 @@
             '?': [[1,1,1],[0,0,1],[0,1,0],[0,0,0],[0,1,0]],
         };
 
+        // ---- Table tennis scoreboard -------------------------------------
+        // Layout constants and colours are the ones in
+        // led_catcher/display/score.py. They are duplicated because the panel
+        // renders in Python and this renders in the browser; if you change one,
+        // change the other, or the simulator quietly stops telling the truth.
+        const SC = {
+            yHeader: 1, yDivider: 7, yScore: 10, yNames: 33,
+            yBanner: 43, yPlayed: 51, ySource: 58,
+            dw: 11, dh: 20, dt: 3, gap: 2,
+            leftEdge: 27, rightStart: 36, colonX: 30, maxPlayed: 3
+        };
+        const SC_COL = {
+            score: [255, 214, 160],
+            label: [116, 122, 190],
+            serve: [249, 115, 22],
+            faint: [70, 78, 110],
+            won:   [34, 197, 94]
+        };
+        const SEGMENTS = {
+            '0':'abcdef', '1':'bc', '2':'abged', '3':'abgcd', '4':'fgbc',
+            '5':'afgcd', '6':'afgecd', '7':'abc', '8':'abcdefg', '9':'abcdfg'
+        };
+
+        function scoreSide(raw) {
+            const k = (raw || '').trim().toLowerCase();
+            if (k === 'a' || k === '0') return 0;
+            if (k === 'b' || k === '1') return 1;
+            return null;
+        }
+
+        function scorePair(raw, sep) {
+            const parts = String(raw || '').split(sep);
+            if (parts.length < 2) return null;
+            const a = parseInt(parts[0], 10), b = parseInt(parts[1], 10);
+            return (isNaN(a) || isNaN(b)) ? null : [a, b];
+        }
+
+        // Same tolerant parse as parse_score(): unknown keys ignored, every
+        // field defaulted, rejected only when there are no usable points.
+        function parseScore(text) {
+            if (!text || !text.trim()) return null;
+            const f = {};
+            text.split(';').forEach(function (chunk) {
+                const i = chunk.indexOf('=');
+                if (i > -1) f[chunk.slice(0, i).trim().toLowerCase()] = chunk.slice(i + 1).trim();
+            });
+            const points = scorePair(f.points, ':');
+            if (!points) return null;
+
+            const setNo = parseInt(f.set, 10);
+            const played = [];
+            (f.played || '').split(',').forEach(function (c) {
+                if (!c.trim()) return;
+                const p = scorePair(c, '-');
+                if (p) played.push(p);
+            });
+
+            return {
+                points: points,
+                sets: scorePair(f.sets, ':') || [0, 0],
+                setNumber: isNaN(setNo) ? 1 : setNo,
+                serving: 'serve' in f ? scoreSide(f.serve) : null,
+                winner: 'winner' in f ? scoreSide(f.winner) : null,
+                names: [(f.a || 'A').toUpperCase().slice(0, 6), (f.b || 'B').toUpperCase().slice(0, 6)],
+                played: played,
+                banner: (f.banner || '').toUpperCase(),
+                source: (f.source || '').toUpperCase()
+            };
+        }
+
+        function fillBox(x, y, w, h, col) {
+            for (let dy = 0; dy < h; dy++) {
+                for (let dx = 0; dx < w; dx++) setPixel(x + dx, y + dy, col[0], col[1], col[2], 1.0);
+            }
+        }
+
+        function drawDigit(ch, x, y, col) {
+            const on = SEGMENTS[ch] || '';
+            const mid = y + Math.floor((SC.dh - SC.dt) / 2);
+            const innerW = SC.dw - 2 * SC.dt;
+            const rightX = x + SC.dw - SC.dt;
+            const bottomY = y + SC.dh - SC.dt;
+            const upperH = mid - (y + SC.dt);
+            const lowerH = bottomY - (mid + SC.dt);
+            if (on.indexOf('a') > -1) fillBox(x + SC.dt, y, innerW, SC.dt, col);
+            if (on.indexOf('g') > -1) fillBox(x + SC.dt, mid, innerW, SC.dt, col);
+            if (on.indexOf('d') > -1) fillBox(x + SC.dt, bottomY, innerW, SC.dt, col);
+            if (on.indexOf('f') > -1) fillBox(x, y + SC.dt, SC.dt, upperH, col);
+            if (on.indexOf('b') > -1) fillBox(rightX, y + SC.dt, SC.dt, upperH, col);
+            if (on.indexOf('e') > -1) fillBox(x, mid + SC.dt, SC.dt, lowerH, col);
+            if (on.indexOf('c') > -1) fillBox(rightX, mid + SC.dt, SC.dt, lowerH, col);
+        }
+
+        function numberWidth(n) {
+            const d = String(n).length;
+            return d * SC.dw + (d - 1) * SC.gap;
+        }
+
+        function drawNumber(n, x, y, col) {
+            const s = String(n);
+            for (let i = 0; i < s.length; i++) drawDigit(s[i], x + i * (SC.dw + SC.gap), y, col);
+        }
+
+        function glyphWidth(ch) {
+            const g = FONT[ch];
+            return g ? g[0].length : 3;
+        }
+
+        function measure(text) {
+            const s = String(text).toUpperCase();
+            if (!s) return 0;
+            let w = 0;
+            for (let i = 0; i < s.length; i++) w += glyphWidth(s[i]) + 1;
+            return w - 1;
+        }
+
+        function drawCentred(text, y, col) {
+            drawTextLine(text, y, col[0], col[1], col[2], Math.max(0, Math.floor((GRID - measure(text)) / 2)));
+        }
+
+        function drawRight(text, rightX, y, col) {
+            drawTextLine(text, y, col[0], col[1], col[2], rightX - measure(text) + 1);
+        }
+
+        function drawScore(sc) {
+            clearMatrix();
+            drawTextLine('SATZ ' + sc.setNumber, SC.yHeader,
+                         SC_COL.label[0], SC_COL.label[1], SC_COL.label[2], 1);
+            drawRight(sc.sets[0] + ':' + sc.sets[1], 62, SC.yHeader, SC_COL.label);
+            fillBox(1, SC.yDivider, 62, 1, SC_COL.faint);
+
+            let leftCol = SC_COL.score, rightCol = SC_COL.score;
+            if (sc.winner !== null) {
+                leftCol = sc.winner === 0 ? SC_COL.won : SC_COL.faint;
+                rightCol = sc.winner === 1 ? SC_COL.won : SC_COL.faint;
+            }
+            drawNumber(sc.points[0], SC.leftEdge - numberWidth(sc.points[0]) + 1, SC.yScore, leftCol);
+            drawNumber(sc.points[1], SC.rightStart, SC.yScore, rightCol);
+            fillBox(SC.colonX, SC.yScore + 5, 3, 3, SC_COL.label);
+            fillBox(SC.colonX, SC.yScore + 12, 3, 3, SC_COL.label);
+
+            const servingKnown = sc.serving !== null && sc.winner === null;
+            const n0 = (servingKnown && sc.serving === 0) ? SC_COL.serve : SC_COL.label;
+            const n1 = (servingKnown && sc.serving === 1) ? SC_COL.serve : SC_COL.label;
+            drawTextLine(sc.names[0], SC.yNames, n0[0], n0[1], n0[2], 5);
+            drawRight(sc.names[1], 58, SC.yNames, n1);
+            if (servingKnown) {
+                fillBox(sc.serving === 0 ? 1 : 60, SC.yNames + 1, 3, 3, SC_COL.serve);
+            }
+
+            if (sc.banner) {
+                drawCentred(sc.banner, SC.yBanner, sc.winner !== null ? SC_COL.won : SC_COL.serve);
+            }
+            if (sc.played.length) {
+                const recent = sc.played.slice(-SC.maxPlayed).map(function (p) { return p[0] + '-' + p[1]; });
+                drawCentred(recent.join(' '), SC.yPlayed, SC_COL.label);
+            }
+            if (sc.source) drawCentred(sc.source, SC.ySource, SC_COL.faint);
+        }
+
         // Draw idle/clock screen
         function drawIdleScreen() {
             clearMatrix();
@@ -572,6 +732,17 @@
             if (clockInterval) {
                 clearInterval(clockInterval);
                 clockInterval = null;
+            }
+
+            // A score holds the panel until the next one replaces it, matching
+            // `hold: true` on the hardware. Falling back to the clock after five
+            // seconds would blank the score between points, which is precisely
+            // when someone looks up at it.
+            var score = (ev.kind === 'score') ? parseScore(ev.message) : null;
+            if (score) {
+                drawScore(score);
+                if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+                return;
             }
 
             drawEvent(ev);
