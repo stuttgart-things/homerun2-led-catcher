@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from led_catcher.config import Config, load_config, setup_logging
 from led_catcher.consumer import RedisConsumer
+from led_catcher.display import reset_worker
 from led_catcher.handlers.control import create_control_router
 from led_catcher.handlers.health import health_app, set_build_info
 from led_catcher.handlers.led_handler import create_led_handler
@@ -131,6 +132,10 @@ async def _run(cfg: Config) -> None:
 
     # Run consumer (blocks until shutdown signal)
     await _run_consumer(consumer)
+
+    # After the consumer, so nothing is still submitting displays. Leaves the
+    # panel dark rather than stuck on the last score.
+    reset_worker()
 
     server.should_exit = True
     await server_task

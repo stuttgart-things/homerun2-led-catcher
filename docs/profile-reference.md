@@ -16,6 +16,7 @@ displayRules:
     image: "<filename>"                    # for image/gif modes
     font: "<font-file>"                    # BDF font file
     duration: <seconds>                    # display duration
+    hold: <true|false>                     # keep it up until replaced
 
 colors:
   error: [255, 0, 0]
@@ -32,13 +33,58 @@ not a default.
 
 ## Display Modes
 
-| Mode | Description | Required Fields |
-|------|-------------|-----------------|
-| `static` | Centered text, fixed duration | `text`, `duration` |
-| `text` | Scrolling text, left to right | `text` |
-| `ticker` | Multi-pass scrolling text | `text` |
-| `image` | Static PNG/JPG, scaled to 64x64 | `image`, `duration` |
-| `gif` | Animated GIF playback | `image`, `duration` |
+| Mode | Description | Required Fields | Honours `hold` |
+|------|-------------|-----------------|----------------|
+| `static` | Centered text, fixed duration | `text`, `duration` | yes |
+| `text` | Scrolling text, left to right | `text` | no |
+| `ticker` | Multi-pass scrolling text | `text` | no |
+| `image` | Static PNG/JPG, scaled to 64x64 | `image`, `duration` | yes |
+| `gif` | Animated GIF playback | `image`, `duration` | no |
+
+`duration` does not apply to `text` and `ticker`: a scroll lasts as long as the
+scroll takes, which follows from the length of the text. Setting it on those
+modes has no effect.
+
+## `duration` and `hold`
+
+A rule says how long its message owns the panel, and there are two answers.
+
+**A finite `duration`** is a promise of screen time. The message is shown for
+that long and is not cut short by a newer one arriving — that one waits its
+turn. This is what a notification wants: it has something to say and it should
+be readable before the next thing appears.
+
+**`hold: true`** means *until something replaces it*. `duration` is ignored, the
+panel is not cleared when the message is over, and the next message takes over
+the moment it arrives. This is what a live display wants — a scoreboard, a
+weight, a build status. The score of a table tennis match should be readable
+between points, not for five seconds after each one.
+
+A held display is therefore pre-emptible by definition, and that is the whole
+rule: there is no separate pre-emption setting to combine with this one.
+
+```yaml
+displayRules:
+  tabletennis-score:
+    systems: [tabletennis]
+    severity: [INFO, SUCCESS]
+    kind: static
+    text: "{{ title }}"
+    font: 6x10.bdf
+    hold: true          # the score stays readable between points
+```
+
+### What happens to messages that arrive during a display
+
+The panel is a display, not a queue. One worker thread owns the matrix, with a
+single slot for what to show next, and the newest message wins: if three
+messages arrive while a finite display is running, the panel shows the third
+when it frees up and the first two are dropped. A stale value shown after a
+newer one has arrived is worse than not showing it.
+
+Displaying happens on that worker, never on the consumer's event loop, so a
+message on the panel never stops the catcher reading its streams or answering
+`/healthz`.
 
 ## Rule Matching
 
