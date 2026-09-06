@@ -19,6 +19,12 @@ class LedEvent:
     kind: str = ""
     message: str = ""
     color: tuple[int, int, int] = (255, 255, 255)
+    # How long the matched rule wants this on the panel. Carried through to the
+    # browser so the simulated matrix can show what the real one shows —
+    # without them it had its own hardcoded five seconds and disagreed with the
+    # hardware (#62).
+    duration: float = 5.0
+    hold: bool = False
 
     def severity_css(self) -> str:
         return {

@@ -562,7 +562,11 @@
         let idleTimer = null;
         let clockInterval = null;
         let isIdle = true;
-        const EVENT_DISPLAY_SECONDS = 5;
+        // Only used when the server sends no duration — an older build, or a
+        // message that matched no rule. The real value comes with the event,
+        // because a simulator with its own idea of how long things stay up is
+        // not simulating anything (#62).
+        const FALLBACK_DISPLAY_SECONDS = 5;
 
         function showEvent(ev) {
             isIdle = false;
@@ -576,11 +580,17 @@
 
             drawEvent(ev);
 
-            // Set timer to switch to idle after EVENT_DISPLAY_SECONDS
             if (idleTimer) clearTimeout(idleTimer);
+
+            // A held event stays until another one replaces it, exactly as the
+            // matrix does — no timer, and no clock over the top of it. That is
+            // the point of `hold` for a live display like a scoreboard.
+            if (ev.hold) return;
+
+            const seconds = Number(ev.duration) > 0 ? Number(ev.duration) : FALLBACK_DISPLAY_SECONDS;
             idleTimer = setTimeout(() => {
                 goIdle();
-            }, EVENT_DISPLAY_SECONDS * 1000);
+            }, seconds * 1000);
         }
 
         function goIdle() {
