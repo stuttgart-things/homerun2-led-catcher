@@ -69,6 +69,25 @@ displayRules:
     text: "{{ system }}: {{ title }}"
     font: 6x10.bdf
     duration: 5
+  # A live score, not a notification: it should stay readable between points
+  # rather than scroll past once. `hold` keeps it up until the next point
+  # replaces it, and `static` renders the title alone — the panel is 64x64 and
+  # a "tabletennis: " prefix would push the score off the edge.
+  #
+  # Must stay above default-info: first match wins, and the wildcard there
+  # would otherwise take it.
+  #
+  # Fed by stuttgart-things/zaehlwerk, which owns the running match and pitches
+  # `system: tabletennis` on its own stream (zaehlwerk ADR-0003). `duration`
+  # only applies on a catcher older than v0.5.1, which ignores `hold`.
+  tabletennis-score:
+    systems: [tabletennis]
+    severity: [INFO, SUCCESS]
+    kind: static
+    text: "{{ title }}"
+    font: 6x10.bdf
+    hold: true
+    duration: 3
   default-info:
     systems: ["*"]
     severity: [INFO, SUCCESS]
