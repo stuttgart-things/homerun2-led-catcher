@@ -109,6 +109,8 @@ def create_web_app(
                 "author": e.author,
                 "kind": e.kind,
                 "color": e.color_hex(),
+                "duration": e.duration,
+                "hold": e.hold,
             }
             for e in tracker.recent(50)
         ]

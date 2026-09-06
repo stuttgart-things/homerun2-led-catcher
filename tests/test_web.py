@@ -4,7 +4,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from led_catcher.models import CaughtMessage, Message
-from led_catcher.profile import Profile
+from led_catcher.profile import DisplayConfig, Profile
 from led_catcher.web import EventTracker, LedEvent, create_web_app, create_web_handler
 
 
@@ -111,3 +111,89 @@ async def test_web_app_empty_events():
         resp = await client.get("/events")
     assert resp.status_code == 200
     assert "No events yet" in resp.text
+
+
+# --- the simulator has to show what the matrix shows (#62) -----------------
+#
+# The canvas used to hold every event for a hardcoded five seconds and then
+# draw the clock, whatever the profile said. A score with `hold: true` was
+# therefore replaced by a clock while the hardware kept it up — and the
+# simulator is precisely the tool for checking a profile without hardware.
+
+
+def _profile_with(rule: dict) -> Profile:
+    return Profile(rules={"r": DisplayConfig(**rule)})
+
+
+def test_the_recorded_event_carries_what_the_rule_decided():
+    tracker = EventTracker()
+    profile = _profile_with(
+        dict(kind="static", text="{{ title }}", hold=True, duration=3, systems=["*"], severity=["info"])
+    )
+    handler = create_web_handler(profile, tracker)
+
+    handler(CaughtMessage(message=Message(title="7:5", severity="info", system="tabletennis")))
+
+    event = tracker.recent(1)[0]
+    assert event.hold is True
+    assert event.duration == 3
+
+
+def test_an_unheld_rule_is_recorded_as_such():
+    tracker = EventTracker()
+    profile = _profile_with(dict(kind="text", text="{{ title }}", duration=7, systems=["*"], severity=["info"]))
+    handler = create_web_handler(profile, tracker)
+
+    handler(CaughtMessage(message=Message(title="build ok", severity="info", system="github")))
+
+    event = tracker.recent(1)[0]
+    assert event.hold is False
+    assert event.duration == 7
+
+
+def test_a_message_matching_no_rule_still_gets_a_duration():
+    """It is recorded uncoloured by rule; the canvas still needs a number."""
+    tracker = EventTracker()
+    handler = create_web_handler(Profile(rules={}), tracker)
+
+    handler(CaughtMessage(message=Message(title="orphan", severity="info", system="nowhere")))
+
+    event = tracker.recent(1)[0]
+    assert event.hold is False
+    assert event.duration > 0
+
+
+async def test_the_api_hands_hold_and_duration_to_the_browser():
+    """The canvas reads /api/events; a field the API drops never arrives."""
+    tracker = EventTracker()
+    profile = _profile_with(
+        dict(kind="static", text="{{ title }}", hold=True, duration=3, systems=["*"], severity=["info"])
+    )
+    create_web_handler(profile, tracker)(
+        CaughtMessage(message=Message(title="7:5", severity="info", system="tabletennis"))
+    )
+
+    app = create_web_app(tracker, version="test", commit="c", date="d")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        payload = (await client.get("/api/events")).json()
+
+    assert payload, "no events returned"
+    assert payload[0]["hold"] is True
+    assert payload[0]["duration"] == 3
+
+
+def test_the_canvas_does_not_go_idle_while_an_event_is_held():
+    """The template is the other half of this and has no test runner of its own.
+
+    Asserting on its source is crude, but the alternative is a fix that is only
+    half applied: the values reaching the browser and the canvas ignoring them,
+    which is the state this replaced.
+    """
+    from pathlib import Path
+
+    template = (Path(__file__).parent.parent / "src" / "led_catcher" / "web" / "templates" / "index.html").read_text()
+
+    assert "if (ev.hold) return;" in template, "a held event still falls through to the idle timer"
+    assert "ev.duration" in template, "the canvas is not using the event's own duration"
+    assert "const EVENT_DISPLAY_SECONDS = 5;" not in template, "the hardcoded display duration is back"
