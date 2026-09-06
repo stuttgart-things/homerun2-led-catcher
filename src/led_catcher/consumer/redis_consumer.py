@@ -19,6 +19,20 @@ MessageHandler = Callable[[CaughtMessage], None]
 BLOCK_MS = 5000
 """XREADGROUP block timeout — also the upper bound for a runtime stream switch to take effect."""
 
+SOCKET_TIMEOUT_SECONDS = BLOCK_MS / 1000 + 5
+"""How long a socket read may take, which has to outlast a blocking XREADGROUP.
+
+redis-py defaults this to 5 seconds — exactly BLOCK_MS. The server answers a
+blocking read with nil after BLOCK_MS, and the client gives up at the same
+instant, so the read it asked for times out rather than returning empty. The
+loop then lands in its error branch and only comes round after the retry
+delay, which is why a stream switch took about a minute to take effect instead
+of the documented BLOCK_MS (#56).
+
+Measured against redis-py 8.1.0: block=4000 returns in 4.0s, block=5000 raises
+after 59s, and block=5000 with this timeout set returns in 5.0s.
+"""
+
 
 def normalize_streams(streams: list[str]) -> list[str]:
     """Trim, drop empties and de-duplicate while preserving order."""
@@ -90,6 +104,7 @@ class RedisConsumer:
                 port=self._cfg.redis.port,
                 password=self._cfg.redis.password or None,
                 decode_responses=True,
+                socket_timeout=SOCKET_TIMEOUT_SECONDS,
             )
         return self._client
 
