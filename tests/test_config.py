@@ -108,9 +108,9 @@ def test_the_socket_timeout_outlasts_a_blocking_read():
     """
     from led_catcher.consumer.redis_consumer import BLOCK_MS, SOCKET_TIMEOUT_SECONDS
 
-    assert SOCKET_TIMEOUT_SECONDS > BLOCK_MS / 1000, (
-        "a blocking read of BLOCK_MS would time out on the socket before the server answers it"
-    )
+    assert (
+        SOCKET_TIMEOUT_SECONDS > BLOCK_MS / 1000
+    ), "a blocking read of BLOCK_MS would time out on the socket before the server answers it"
 
 
 async def test_the_consumer_asks_for_that_socket_timeout():
