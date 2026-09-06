@@ -197,3 +197,20 @@ def test_the_canvas_does_not_go_idle_while_an_event_is_held():
     assert "if (ev.hold) return;" in template, "a held event still falls through to the idle timer"
     assert "ev.duration" in template, "the canvas is not using the event's own duration"
     assert "const EVENT_DISPLAY_SECONDS = 5;" not in template, "the hardcoded display duration is back"
+
+
+async def test_the_ui_page_is_not_cached():
+    """The page carries the canvas renderer inline.
+
+    Without this a tab left open across a deploy keeps the old JavaScript while
+    the timeline, fed by SSE, stays current — so the UI looks alive and
+    disagrees with the matrix. That is how #62 appeared to survive its own fix:
+    the server was serving the new page, the browser was not asking for it.
+    """
+    app = create_web_app(EventTracker(), version="test", commit="c", date="d")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/")
+
+    assert response.status_code == 200
+    assert response.headers.get("cache-control") == "no-store"
