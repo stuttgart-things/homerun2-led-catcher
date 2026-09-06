@@ -2,6 +2,11 @@
 
 Routes DisplayConfig to the correct rendering function:
 static, text (scroll), ticker, image, gif.
+
+Waiting is injected rather than called directly. A display is mostly spent
+waiting, and who gets to interrupt that wait is the display worker's business,
+not this module's: a held display waits for a replacement, a finite one waits
+out its duration. See led_catcher.display.worker.
 """
 
 from __future__ import annotations
@@ -51,8 +56,17 @@ def visual_aid_dirs() -> list[Path]:
     return _asset_dirs("VISUAL_AID_DIR", "visual_aid")
 
 
-def display_event(matrix, config) -> None:
-    """Route a DisplayConfig to the correct display mode."""
+def display_event(matrix, config, wait=None) -> None:
+    """Route a DisplayConfig to the correct display mode.
+
+    `wait(seconds, hold=False)` is how a mode spends time on the panel. It
+    defaults to a plain sleep, which is right for a direct call in a test or a
+    one-shot render; the display worker passes one that a replacement message
+    can interrupt.
+    """
+    if wait is None:
+        wait = _sleep
+
     kind = config.kind.lower()
     handlers = {
         "static": _static_text,
@@ -66,15 +80,27 @@ def display_event(matrix, config) -> None:
         logger.warning("unknown display kind '%s', falling back to static text", kind)
         handler = _static_text
 
-    handler(matrix, config)
+    handler(matrix, config, wait)
 
 
-def _static_text(matrix, config) -> None:
+def _sleep(seconds: float, hold: bool = False) -> None:
+    """The default wait: sleep, and treat hold as "stay up indefinitely".
+
+    Without a worker to deliver a replacement, a held display has nothing to
+    wait for, so it returns immediately and leaves the panel lit. That is the
+    honest behaviour for a direct call — blocking forever would not be.
+    """
+    if hold:
+        return
+    time.sleep(seconds)
+
+
+def _static_text(matrix, config, wait=_sleep) -> None:
     """Display centered static text for the configured duration."""
     text = config.text or "---"
     color = config.color
     font_path = _resolve_font(config.font)
-    duration = config.duration
+    hold = getattr(config, "hold", False)
 
     matrix.clear()
 
@@ -82,12 +108,17 @@ def _static_text(matrix, config) -> None:
     matrix.draw_text(font_path, 2, 36, color, text)
     matrix.swap()
 
-    time.sleep(duration)
+    wait(config.duration, hold)
+    if hold:
+        # Left lit deliberately: the next message draws over it. Clearing here
+        # would blank the panel between two scores for as long as it takes the
+        # worker to pick up the next one.
+        return
     matrix.clear()
     matrix.swap()
 
 
-def _scroll_text(matrix, config, loops: int = 1) -> None:
+def _scroll_text(matrix, config, wait=_sleep, loops: int = 1) -> None:
     """Scroll text from right to left across the matrix."""
     text = config.text or "---"
     color = config.color
@@ -104,48 +135,51 @@ def _scroll_text(matrix, config, loops: int = 1) -> None:
             matrix.clear()
             matrix.draw_text(font_path, x, 36, color, text)
             matrix.swap()
-            time.sleep(0.03)  # ~30fps
+            wait(0.03)  # ~30fps
             x -= 1
 
     matrix.clear()
     matrix.swap()
 
 
-def _ticker_text(matrix, config) -> None:
+def _ticker_text(matrix, config, wait=_sleep) -> None:
     """Ticker mode — scroll text multiple times."""
-    _scroll_text(matrix, config, loops=3)
+    _scroll_text(matrix, config, wait, loops=3)
 
 
-def _show_image(matrix, config) -> None:
+def _show_image(matrix, config, wait=_sleep) -> None:
     """Display a static image scaled to 64x64."""
     image_path = _resolve_image(config.image)
     if image_path is None:
         logger.warning("image not found: %s", config.image)
-        _static_text(matrix, config)
+        _static_text(matrix, config, wait)
         return
 
+    hold = getattr(config, "hold", False)
     img = Image.open(image_path).convert("RGB").resize((64, 64), Image.LANCZOS)
     matrix.clear()
     matrix.show_image(img)
     matrix.swap()
 
-    time.sleep(config.duration)
+    wait(config.duration, hold)
+    if hold:
+        return
     matrix.clear()
     matrix.swap()
 
 
-def _show_gif(matrix, config) -> None:
+def _show_gif(matrix, config, wait=_sleep) -> None:
     """Play an animated GIF on the matrix."""
     image_path = _resolve_image(config.image)
     if image_path is None:
         logger.warning("gif not found: %s", config.image)
-        _static_text(matrix, config)
+        _static_text(matrix, config, wait)
         return
 
     gif = Image.open(image_path)
     if not getattr(gif, "is_animated", False):
         # Static image, just show it
-        _show_image(matrix, config)
+        _show_image(matrix, config, wait)
         return
 
     start = time.monotonic()
@@ -159,7 +193,7 @@ def _show_gif(matrix, config) -> None:
             matrix.swap()
             # Use GIF frame duration or default to 50ms
             frame_duration = gif.info.get("duration", 50) / 1000.0
-            time.sleep(max(frame_duration, 0.02))
+            wait(max(frame_duration, 0.02))
 
     matrix.clear()
     matrix.swap()

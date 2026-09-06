@@ -36,6 +36,15 @@ class DisplayConfig:
     image: str = ""
     font: str = "6x10.bdf"
     duration: float = 5.0
+    # hold keeps the display up until another message replaces it, instead of
+    # clearing after `duration`. For a live scoreboard that is the whole point:
+    # the score should be readable between points, not for five seconds after
+    # each one. A held display is by definition pre-emptible — that is what
+    # "until replaced" means — while a finite duration gets its time.
+    #
+    # Only the still modes honour it (static, image). The animated ones run
+    # for as long as their animation takes; see docs/profile-reference.md.
+    hold: bool = False
     color: tuple[int, int, int] = (255, 255, 255)
     systems: list[str] = field(default_factory=list)
     severity: list[str] = field(default_factory=list)
@@ -87,6 +96,7 @@ def load_profile(path: str | Path) -> Profile:
             image=rule_data.get("image", ""),
             font=rule_data.get("font", "6x10.bdf"),
             duration=float(rule_data.get("duration", 5)),
+            hold=bool(rule_data.get("hold", False)),
             systems=rule_data.get("systems", []),
             severity=severity_list,
         )
@@ -133,6 +143,7 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
         image=config.image,
         font=config.font,
         duration=config.duration,
+        hold=config.hold,
         systems=config.systems,
         severity=config.severity,
     )

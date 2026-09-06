@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from led_catcher.display import get_display
+from led_catcher.display import get_worker
 from led_catcher.models import CaughtMessage
 from led_catcher.profile import Profile, match_rule
 
@@ -12,8 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 def create_led_handler(profile: Profile):
-    """Create a LED handler closure with the given profile."""
-    display = get_display()
+    """Create a LED handler closure with the given profile.
+
+    The handler hands the display to the worker thread and returns. It used to
+    display inline, which blocked the consumer's read loop — and uvicorn with
+    it — for the length of every message (#54).
+    """
+    worker = get_worker()
 
     def led_handler(msg: CaughtMessage) -> None:
         config = match_rule(profile, msg.message)
@@ -30,11 +35,12 @@ def create_led_handler(profile: Profile):
             return
 
         logger.info(
-            "displaying: kind=%s system=%s severity=%s",
+            "displaying: kind=%s system=%s severity=%s hold=%s",
             config.kind,
             msg.message.system,
             msg.message.severity,
+            config.hold,
         )
-        display.show(config)
+        worker.submit(config)
 
     return led_handler
