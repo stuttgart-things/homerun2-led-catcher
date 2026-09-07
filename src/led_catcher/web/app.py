@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
@@ -48,7 +48,14 @@ def create_web_app(
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.get("/", response_class=HTMLResponse)
-    async def index():
+    async def index(response: Response):
+        # The page carries the canvas renderer inline, so its behaviour changes
+        # with the release. Without this a tab left open across a deploy keeps
+        # the old JavaScript while the event timeline, fed by SSE, stays
+        # current — so the UI looks alive and disagrees with the matrix, which
+        # is a hard thing to spot. The version in the footer is the only clue,
+        # and it is the part nobody reads.
+        response.headers["Cache-Control"] = "no-store"
         template = (TEMPLATES_DIR / "index.html").read_text()
         events_html = _render_events(tracker)
         page = (
