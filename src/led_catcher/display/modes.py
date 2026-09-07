@@ -1,7 +1,7 @@
 """Display modes for the LED matrix.
 
 Routes DisplayConfig to the correct rendering function:
-static, text (scroll), ticker, image, gif.
+static, text (scroll), ticker, image, gif, score.
 
 Waiting is injected rather than called directly. A display is mostly spent
 waiting, and who gets to interrupt that wait is the display worker's business,
@@ -74,6 +74,7 @@ def display_event(matrix, config, wait=None) -> None:
         "ticker": _ticker_text,
         "image": _show_image,
         "gif": _show_gif,
+        "score": _score_board,
     }
     handler = handlers.get(kind)
     if handler is None:
@@ -242,3 +243,15 @@ def _resolve_image(image_name: str) -> Path | None:
     if not image_name:
         return None
     return _search(visual_aid_dirs(), image_name)
+
+
+def _score_board(matrix, config, wait=_sleep) -> None:
+    """Table tennis scoreboard — see led_catcher.display.score.
+
+    Imported inside the function rather than at module scope: score.py falls
+    back to _static_text for a payload it cannot parse, and a top-level import
+    on both sides is a cycle.
+    """
+    from led_catcher.display.score import display_score
+
+    display_score(matrix, config, wait)

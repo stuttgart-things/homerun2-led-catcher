@@ -40,10 +40,71 @@ not a default.
 | `ticker` | Multi-pass scrolling text | `text` | no |
 | `image` | Static PNG/JPG, scaled to 64x64 | `image`, `duration` | yes |
 | `gif` | Animated GIF playback | `image`, `duration` | no |
+| `score` | Table tennis scoreboard | `text` | yes |
 
 `duration` does not apply to `text` and `ticker`: a scroll lasts as long as the
 scroll takes, which follows from the length of the text. Setting it on those
 modes has no effect.
+
+### `score`
+
+A live table tennis scoreboard, for the running match zaehlwerk pitches onto the
+`tabletennis` stream. The other text modes render one line of BDF text, which is
+the wrong shape for a score read from across the room mid-rally, so the points
+get seven-segment digits at 11x20 and everything around them stays in the 3x5
+glyphs the simulator already uses.
+
+```
+ y  1- 5   set number left, set score right
+ y  7      divider
+ y 10-29   points, seven-segment, 11x20 per digit
+ y 33-37   player names, serving dot outside the server's name
+ y 43-47   status banner
+ y 51-55   the last three finished sets
+ y 58-62   source of the last point, dimmed
+```
+
+`text` carries the whole board as semicolon-separated key/value pairs:
+
+```
+points=8:6;sets=1:1;set=3;serve=b;a=ANJA;b=BEN;played=11-8,9-11;banner=SATZBALL ANJA;source=button-a
+```
+
+| Key | Meaning | Default |
+|-----|---------|---------|
+| `points` | points in the set in progress, `a:b` | required |
+| `sets` | sets won, `a:b` | `0:0` |
+| `set` | number of the set in progress | `1` |
+| `serve` | who serves next, `a`/`b` (or `0`/`1`) | not drawn |
+| `a`, `b` | player names, truncated at 6 characters | `A`, `B` |
+| `played` | finished sets, `11-8,9-11`; the last three are shown | none |
+| `banner` | status line — deuce, set point, match point, winner | none |
+| `winner` | `a`/`b`; greens the winner and dims the loser | none |
+| `source` | device that sent the last point | not drawn |
+
+Unknown keys are ignored, so the pitcher can add fields without a lockstep
+release. A payload with no usable `points` falls back to `static` with the raw
+text: a panel showing the string beats a panel gone dark, which reads as broken
+hardware.
+
+The mode applies no rules of its own. Who serves, whether this is a set point
+and who has won all arrive on the wire — zaehlwerk owns the match, the catcher
+owns the pixels. The score is also not coloured by severity: a scoreboard that
+turned red because the pitcher sent `ERROR` would read as a warning about the
+match rather than the match itself.
+
+Use it with `hold: true`. A held score stays up until the next one replaces it,
+so the panel is readable between points instead of blanking five seconds after
+each one:
+
+```yaml
+tabletennis-score:
+  systems: [tabletennis]
+  severity: [INFO]
+  kind: score
+  text: "{{ message }}"
+  hold: true
+```
 
 ## `duration` and `hold`
 
