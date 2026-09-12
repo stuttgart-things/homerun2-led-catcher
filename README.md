@@ -113,6 +113,7 @@ All configuration is via environment variables:
 | `REDIS_STREAM` | `messages` | Single stream to consume (legacy; used when `REDIS_STREAMS` is unset) |
 | `CONSUMER_GROUP` | `homerun2-led-catcher` | Consumer group name |
 | `CONSUMER_NAME` | hostname | Consumer name within group |
+| `REDIS_STARTUP_TIMEOUT` | `120s` | How long the consumer retries Redis at startup (Go duration: `90s`, `2m`). When it runs out the process exits non-zero; an invalid value fails startup; SIGTERM ends the wait |
 | `LED_MODE` | `full` | Operating mode: `led`, `web`, `full` |
 | `HEALTH_PORT` | `8080` | Health/web server port |
 | `PROFILE_PATH` | `profile.yaml` | Path to display rules YAML |

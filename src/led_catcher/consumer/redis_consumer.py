@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Callable
 
@@ -32,6 +33,17 @@ of the documented BLOCK_MS (#56).
 Measured against redis-py 8.1.0: block=4000 returns in 4.0s, block=5000 raises
 after 59s, and block=5000 with this timeout set returns in 5.0s.
 """
+
+
+STARTUP_ATTEMPT_TIMEOUT_SECONDS = 5.0
+"""Upper bound for a single startup attempt (ping + consumer group setup)."""
+
+STARTUP_BACKOFF_INITIAL_SECONDS = 1.0
+STARTUP_BACKOFF_MAX_SECONDS = 16.0
+
+
+class RedisNotReadyError(RuntimeError):
+    """Redis did not answer within ``REDIS_STARTUP_TIMEOUT``."""
 
 
 def normalize_streams(streams: list[str]) -> list[str]:
@@ -69,6 +81,7 @@ class RedisConsumer:
         self._streams: list[str] = normalize_streams(cfg.redis.streams) or ["messages"]
         self._configured_streams: list[str] = list(self._streams)
         self._switch_lock = asyncio.Lock()
+        self._state = "waiting_for_redis"
 
     @property
     def streams(self) -> list[str]:
@@ -88,6 +101,16 @@ class RedisConsumer:
     def is_overridden(self) -> bool:
         """True when the active set differs from the environment configuration."""
         return self._streams != self._configured_streams
+
+    @property
+    def state(self) -> str:
+        """``waiting_for_redis``, ``running``, ``stopped`` or ``failed``."""
+        return self._state
+
+    def mark_failed(self) -> None:
+        """Record that the consumer task ended without a shutdown request."""
+        if self._state != "stopped":
+            self._state = "failed"
 
     @property
     def consumer_group(self) -> str:
@@ -182,9 +205,58 @@ class RedisConsumer:
             logger.exception("failed to resolve payload for %s", message_id)
             return None
 
-    async def run(self) -> None:
+    async def _startup_attempt(self) -> None:
         client = await self._connect()
+        await client.ping()
         await self._ensure_group(client, self._streams)
+
+    async def wait_ready(self, timeout: float) -> None:
+        """Retry connecting and creating the consumer groups until Redis answers.
+
+        Exponential backoff (1s, 2s, 4s, 8s, capped at 16s), each attempt bounded
+        by ``STARTUP_ATTEMPT_TIMEOUT_SECONDS``, for at most ``timeout`` seconds.
+        These calls used to run once, outside the read loop's error handling, so a
+        Redis that was not up yet ended the consumer task while the process and
+        ``/healthz`` stayed green and nothing was ever consumed (#65).
+
+        Raises :class:`RedisNotReadyError` when the budget runs out. A cancellation
+        (shutdown signal) ends the wait immediately.
+        """
+        deadline = time.monotonic() + timeout
+        backoff = STARTUP_BACKOFF_INITIAL_SECONDS
+        attempt = 0
+        while True:
+            attempt += 1
+            remaining = deadline - time.monotonic()
+            try:
+                await asyncio.wait_for(
+                    self._startup_attempt(),
+                    timeout=max(0.001, min(STARTUP_ATTEMPT_TIMEOUT_SECONDS, remaining)),
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - any failure is retried within the budget
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RedisNotReadyError(
+                        f"redis at {self._cfg.redis.addr}:{self._cfg.redis.port} not ready "
+                        f"after {attempt} attempts: {exc!r}"
+                    ) from exc
+                sleep_for = min(backoff, remaining)
+                logger.warning(
+                    "redis not ready, retrying",
+                    extra={"attempt": attempt, "error": repr(exc), "next_sleep": sleep_for},
+                )
+                await asyncio.sleep(sleep_for)
+                backoff = min(backoff * 2, STARTUP_BACKOFF_MAX_SECONDS)
+                continue
+            if attempt > 1:
+                logger.info("redis ready after retries", extra={"attempts": attempt})
+            return
+
+    async def run(self) -> None:
+        await self.wait_ready(self._cfg.redis_startup_timeout)
+        client = await self._connect()
 
         group = self._cfg.consumer_group
         consumer = self._cfg.consumer_name
@@ -199,6 +271,7 @@ class RedisConsumer:
         )
 
         self._running = True
+        self._state = "running"
         while self._running:
             try:
                 # Rebuilt every iteration so a runtime switch is picked up here.
@@ -258,6 +331,8 @@ class RedisConsumer:
         await client.xack(stream, group, entry_id)
 
     async def shutdown(self) -> None:
+        if self._state != "failed":
+            self._state = "stopped"
         self._running = False
         if self._client:
             await self._client.aclose()
