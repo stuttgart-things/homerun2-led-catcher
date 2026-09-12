@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import socket
 import sys
 from dataclasses import dataclass, field
+
+DEFAULT_REDIS_STARTUP_TIMEOUT = 120.0
+"""Seconds the consumer retries Redis at startup before the process exits (#65)."""
 
 
 @dataclass
@@ -31,6 +35,7 @@ class Config:
     health_port: int = 8080
     profile_path: str = "profile.yaml"
     ui_stream_presets: list[list[str]] = field(default_factory=list)
+    redis_startup_timeout: float = DEFAULT_REDIS_STARTUP_TIMEOUT
     log_format: str = "json"
     log_level: str = "info"
     version: str = "dev"
@@ -92,6 +97,55 @@ def parse_stream_presets(presets_env: str, fallback: list[str]) -> list[list[str
     return [configured] if configured else []
 
 
+_DURATION_PART = re.compile(r"(\d+(?:\.\d*)?|\.\d+)(ns|us|µs|ms|s|m|h)")
+_DURATION_UNITS = {"ns": 1e-9, "us": 1e-6, "µs": 1e-6, "ms": 1e-3, "s": 1.0, "m": 60.0, "h": 3600.0}
+
+
+def parse_duration(value: str) -> float:
+    """Parse a Go-style duration (``90s``, ``2m``, ``1m30s``, ``500ms``) into seconds.
+
+    Same syntax as Go's ``time.ParseDuration``, so ``REDIS_STARTUP_TIMEOUT`` reads
+    the same here as in the Go homerun2 services. A bare number has no unit and is
+    rejected, as in Go.
+    """
+    text = value.strip()
+    sign = 1.0
+    if text[:1] in ("+", "-"):
+        sign = -1.0 if text[0] == "-" else 1.0
+        text = text[1:]
+    if not text:
+        raise ValueError(f"invalid duration {value!r}")
+    if text == "0":
+        return 0.0
+    total = 0.0
+    pos = 0
+    for match in _DURATION_PART.finditer(text):
+        if match.start() != pos:
+            raise ValueError(f"invalid duration {value!r}")
+        total += float(match.group(1)) * _DURATION_UNITS[match.group(2)]
+        pos = match.end()
+    if pos != len(text) or pos == 0:
+        raise ValueError(f"invalid duration {value!r}")
+    return sign * total
+
+
+def parse_redis_startup_timeout(raw: str) -> float:
+    """``REDIS_STARTUP_TIMEOUT`` in seconds; unset means the default.
+
+    An unparsable, zero or negative value raises instead of falling back: a typo
+    should fail startup, not quietly restore a budget nobody chose.
+    """
+    if not raw.strip():
+        return DEFAULT_REDIS_STARTUP_TIMEOUT
+    try:
+        seconds = parse_duration(raw)
+    except ValueError as exc:
+        raise ValueError(f"REDIS_STARTUP_TIMEOUT {raw!r}: {exc}") from None
+    if seconds <= 0:
+        raise ValueError(f"REDIS_STARTUP_TIMEOUT {raw!r}: must be positive")
+    return seconds
+
+
 def load_config() -> Config:
     redis_cfg = RedisConfig(
         addr=_getenv("REDIS_ADDR", "localhost"),
@@ -112,6 +166,7 @@ def load_config() -> Config:
         health_port=int(_getenv("HEALTH_PORT", "8080")),
         profile_path=_getenv("PROFILE_PATH", "profile.yaml"),
         ui_stream_presets=parse_stream_presets(_getenv("UI_STREAM_PRESETS", ""), redis_cfg.streams),
+        redis_startup_timeout=parse_redis_startup_timeout(_getenv("REDIS_STARTUP_TIMEOUT", "")),
         log_format=_getenv("LOG_FORMAT", "json"),
         log_level=_getenv("LOG_LEVEL", "info"),
         version=_getenv("VERSION", "dev"),
@@ -172,6 +227,10 @@ class _JsonFormatter(logging.Formatter):
             "system",
             "title",
             "author",
+            "attempt",
+            "attempts",
+            "next_sleep",
+            "redis_startup_timeout",
         ):
             val = getattr(record, key, None)
             if val is not None:
