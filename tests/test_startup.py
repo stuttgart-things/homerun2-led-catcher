@@ -8,10 +8,10 @@ from httpx import ASGITransport, AsyncClient
 import led_catcher.consumer.redis_consumer as rc
 from led_catcher.__main__ import _run_consumer
 from led_catcher.config.settings import (
-    _JsonFormatter,
     DEFAULT_REDIS_STARTUP_TIMEOUT,
     Config,
     RedisConfig,
+    _JsonFormatter,
     load_config,
     parse_duration,
     parse_redis_startup_timeout,
