@@ -21,11 +21,13 @@ def create_web_handler(profile: Profile, tracker: EventTracker):
         kind = "text"
         duration = 5.0
         hold = False
+        text = font = image = ""
         if config is not None:
             color = config.color
             kind = config.kind
             duration = config.duration
             hold = config.hold
+            text, font, image = config.text, config.font, config.image
         else:
             # No rule matched. Falling back to a fixed info blue made an
             # unmatched CRITICAL indistinguishable from an INFO in the
@@ -50,6 +52,10 @@ def create_web_handler(profile: Profile, tracker: EventTracker):
             color=color,
             duration=duration,
             hold=hold,
+            text=text,
+            font=font or "6x10.bdf",
+            image=image,
+            matched=config is not None,
         )
         tracker.record(event)
         logger.debug("web event recorded: %s %s", msg.message.system, msg.message.severity)
