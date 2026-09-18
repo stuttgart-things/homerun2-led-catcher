@@ -62,6 +62,7 @@ class PanelConfig:
 @dataclass
 class Config:
     redis: RedisConfig
+    panel: PanelConfig = field(default_factory=PanelConfig)
     consumer_group: str = "homerun2-led-catcher"
     consumer_name: str = ""
     led_mode: str = "full"  # led, web, full
@@ -237,6 +238,7 @@ def load_config() -> Config:
 
     return Config(
         redis=redis_cfg,
+        panel=load_panel_config(),
         consumer_group=_getenv("CONSUMER_GROUP", "homerun2-led-catcher"),
         consumer_name=consumer_name,
         led_mode=_getenv("LED_MODE", "full"),
