@@ -270,7 +270,7 @@ Use `LED_MODE=full` to additionally serve the HTMX simulator on `HEALTH_PORT` �
 handy for watching what the panel *should* be showing from a laptop.
 
 To check the panel without Redis at all, use `LED_MODE=standalone` and drive it
-with `curl` or the simulator's Panel control — see [Display API](display-api.md).
+with `curl` or the simulator's Panel control — see [Testing with curl](testing-with-curl.md).
 
 ## 7. Run as a service
 

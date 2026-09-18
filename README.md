@@ -15,6 +15,7 @@ Redis Streams → RedisConsumer → log_handler (structured JSON logging)
 | `led` | Hardware LED matrix only (Raspberry Pi) |
 | `web` | HTMX simulator only (browser, no hardware needed) |
 | `full` | Both LED matrix and web simulator |
+| `standalone` | LED matrix and web simulator, driven only by the `/display` API — no Redis |
 
 ## Quick Start (Development)
 
@@ -100,6 +101,30 @@ led-catcher-publish --dry-run                                 # print payload on
 
 Requires a Redis with the RedisJSON module (redis-stack).
 
+## Drive the Panel with curl
+
+`POST /display` puts something on the panel directly, with no message and no profile
+rule in between. It works in every mode; `LED_MODE=standalone` needs no Redis at all.
+Writes need `LED_API_TOKEN`, and without it the write endpoints don't exist.
+
+```bash
+LED_MODE=standalone LED_API_TOKEN=dev LOG_FORMAT=text python -m led_catcher   # or: task run-standalone
+
+curl -X POST http://localhost:8080/display -H 'Authorization: Bearer dev' \
+  -H 'Content-Type: application/json' \
+  -d '{"kind":"text","text":"DEPLOY LÄUFT","color":[255,165,0]}'
+
+curl http://localhost:8080/display                                                # what is showing
+curl -X DELETE http://localhost:8080/display -H 'Authorization: Bearer dev'      # blank it now
+```
+
+- Commands for every mode, a walkthrough script and the error responses:
+  [docs/testing-with-curl.md](docs/testing-with-curl.md)
+- Field reference, auth and limits: [docs/display-api.md](docs/display-api.md)
+
+The web simulator at the same address draws what the panel draws (same fonts, frames and
+timing), and has a **Panel control** form that uses the same API.
+
 ## Configuration
 
 All configuration is via environment variables:
@@ -114,7 +139,10 @@ All configuration is via environment variables:
 | `CONSUMER_GROUP` | `homerun2-led-catcher` | Consumer group name |
 | `CONSUMER_NAME` | hostname | Consumer name within group |
 | `REDIS_STARTUP_TIMEOUT` | `120s` | How long the consumer retries Redis at startup (Go duration: `90s`, `2m`). When it runs out the process exits non-zero; an invalid value fails startup; SIGTERM ends the wait |
-| `LED_MODE` | `full` | Operating mode: `led`, `web`, `full` |
+| `LED_MODE` | `full` | Operating mode: `led`, `web`, `full`, `standalone` (no Redis, driven by `/display`) |
+| `LED_API_TOKEN` | *(empty)* | Bearer token for `POST`/`DELETE /display`. Empty: the write endpoints are not registered |
+| `LED_API_MAX_TEXT` | `256` | Longest `text` accepted by `POST /display` |
+| `LED_API_RATE_LIMIT` | `30` | `/display` writes per minute, across all callers |
 | `HEALTH_PORT` | `8080` | Health/web server port |
 | `PROFILE_PATH` | `profile.yaml` | Path to display rules YAML |
 | `UI_STREAM_PRESETS` | *(empty)* | Web simulator one-click presets: comma-separated, `\|`-separated within a preset. Defaults to the configured streams as a single preset |
