@@ -148,9 +148,16 @@ The repo ships three public-domain BDF fonts in `fonts/` (`4x6`, `6x10`, `7x13`)
 so text rendering works out of the box. Only BDF is supported — `LoadFont()` cannot
 read TTF/OTF.
 
+`visual_aid/` ships two demo assets, so `kind: image` and `kind: gif` work on a
+fresh checkout too: `sunset.gif` (the loop the shipped profile plays on a GitHub
+error) and `test-pattern.png` (an alignment and colour pattern worth putting on
+a panel you are bringing up for the first time). Both are drawn by
+`hack/generate_demo_assets.py`.
+
 ```bash
 task fetch-fonts          # optional: pull the full upstream font set
-cp my-animation.gif visual_aid/   # images/GIFs for kind: image / kind: gif
+task demo-assets          # optional: redraw visual_aid/ from the generator
+cp my-animation.gif visual_aid/   # your own images/GIFs
 ```
 
 Both directories are overridable, which is what a non-editable or packaged install

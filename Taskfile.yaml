@@ -67,6 +67,11 @@ tasks:
             done
         echo "fonts/ now contains $(ls -1 fonts/*.bdf | wc -l) BDF fonts"
 
+  demo-assets:
+    desc: Redraw the demo images and GIFs in visual_aid/
+    cmds:
+      - python hack/generate_demo_assets.py
+
   publish:
     desc: "Publish one test message into the stream (REDIS_ADDR etc. from env)"
     cmds:

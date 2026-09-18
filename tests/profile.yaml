@@ -6,6 +6,13 @@ displayRules:
     image: sunset.gif
     duration: 5
 
+  demo-pattern:
+    systems: [demo]
+    severity: [DEBUG]
+    kind: image
+    image: test-pattern.png
+    duration: 5
+
   scale-weight:
     systems: [scale]
     severity: [INFO]
