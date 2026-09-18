@@ -36,7 +36,7 @@ def _build_handlers(cfg: Config) -> tuple[list, EventTracker | None]:
     profile = load_profile(cfg.profile_path)
 
     if mode in ("led", "full"):
-        handlers.append(create_led_handler(profile))
+        handlers.append(create_led_handler(profile, panel=cfg.panel))
         logger.info("LED handler active")
 
     if mode in ("web", "full"):

@@ -292,7 +292,7 @@ def test_the_led_handler_returns_before_the_display_is_over(monkeypatch):
 
     display = FakeDisplay()
     monkeypatch.setattr(worker_module, "_worker", None)
-    monkeypatch.setattr("led_catcher.display.matrix.get_display", lambda: display)
+    monkeypatch.setattr("led_catcher.display.matrix.get_display", lambda panel=None: display)
 
     profile = Profile(
         rules={
@@ -323,7 +323,7 @@ def test_the_led_handler_still_drops_a_message_with_no_rule(monkeypatch, caplog)
 
     display = FakeDisplay()
     monkeypatch.setattr(worker_module, "_worker", None)
-    monkeypatch.setattr("led_catcher.display.matrix.get_display", lambda: display)
+    monkeypatch.setattr("led_catcher.display.matrix.get_display", lambda panel=None: display)
 
     caplog.set_level(logging.INFO)
     handler = create_led_handler(Profile(rules={}))

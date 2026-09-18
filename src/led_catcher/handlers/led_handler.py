@@ -11,14 +11,19 @@ from led_catcher.profile import Profile, match_rule
 logger = logging.getLogger(__name__)
 
 
-def create_led_handler(profile: Profile):
+def create_led_handler(profile: Profile, panel=None):
     """Create a LED handler closure with the given profile.
 
     The handler hands the display to the worker thread and returns. It used to
     display inline, which blocked the consumer's read loop — and uvicorn with
     it — for the length of every message (#54).
+
+    `panel` is the PanelConfig the matrix is opened with. It comes from the
+    already-validated `Config` rather than being read from the environment
+    here, so a bad `LED_*` value is reported by the startup guard in
+    `__main__` instead of surfacing as a traceback from the first handler.
     """
-    worker = get_worker()
+    worker = get_worker(panel=panel)
 
     def led_handler(msg: CaughtMessage) -> None:
         config = match_rule(profile, msg.message)

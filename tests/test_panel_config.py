@@ -222,3 +222,50 @@ def test_a_display_built_without_a_config_reads_the_environment(monkeypatch):
     monkeypatch.setenv("LED_COLS", "96")
 
     assert MatrixDisplay().width == 96
+
+
+# ── reaching the display from startup ────────────────────────────────────────
+
+
+def test_the_panel_is_part_of_the_config_loaded_at_startup(monkeypatch):
+    """So `__main__`'s guard reports a bad value, not a traceback from a handler."""
+    from led_catcher.config import load_config
+
+    monkeypatch.setenv("LED_GPIO_SLOWDOWN", "2")
+
+    assert load_config().panel.gpio_slowdown == 2
+
+
+def test_a_bad_panel_value_fails_load_config(monkeypatch):
+    from led_catcher.config import load_config
+
+    monkeypatch.setenv("LED_GPIO_SLOWDOWN", "fast")
+
+    with pytest.raises(ValueError, match="LED_GPIO_SLOWDOWN"):
+        load_config()
+
+
+def test_the_led_handler_opens_the_panel_with_the_config_it_was_given(monkeypatch):
+    import led_catcher.display.worker as worker_module
+    from led_catcher.handlers.led_handler import create_led_handler
+    from led_catcher.profile import Profile
+
+    seen: list = []
+
+    def fake_get_display(panel=None):
+        seen.append(panel)
+        return MatrixDisplay(panel)
+
+    monkeypatch.setattr(worker_module, "_worker", None)
+    monkeypatch.setattr("led_catcher.display.matrix.get_display", fake_get_display)
+    # Set, and deliberately different from what the handler is handed: the
+    # display must take the validated config, not re-read the environment.
+    monkeypatch.setenv("LED_COLS", "16")
+
+    panel = PanelConfig(cols=128, rows=32)
+    try:
+        create_led_handler(Profile(rules={}), panel=panel)
+    finally:
+        worker_module.reset_worker()
+
+    assert seen == [panel]

@@ -163,8 +163,14 @@ class MatrixDisplay:
 _display: MatrixDisplay | None = None
 
 
-def get_display() -> MatrixDisplay:
+def get_display(panel: PanelConfig | None = None) -> MatrixDisplay:
+    """The process-wide display, built on first use.
+
+    `panel` is only read the first time; afterwards the existing display is
+    returned whatever is passed, because there is one panel and reopening it
+    under a second set of options is not a thing the hardware allows.
+    """
     global _display
     if _display is None:
-        _display = MatrixDisplay()
+        _display = MatrixDisplay(panel)
     return _display

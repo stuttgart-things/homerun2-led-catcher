@@ -143,17 +143,18 @@ class DisplayWorker:
 _worker: DisplayWorker | None = None
 
 
-def get_worker(display=None) -> DisplayWorker:
+def get_worker(display=None, panel=None) -> DisplayWorker:
     """The process-wide display worker, started on first use.
 
     A module-level singleton for the same reason ``get_display`` is one: there
-    is one panel, and it can only have one owner.
+    is one panel, and it can only have one owner. ``panel`` is handed to the
+    display when this call is what creates it.
     """
     global _worker
     if _worker is None:
         from led_catcher.display.matrix import get_display
 
-        _worker = DisplayWorker(display if display is not None else get_display())
+        _worker = DisplayWorker(display if display is not None else get_display(panel))
         _worker.start()
     return _worker
 
