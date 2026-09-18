@@ -39,7 +39,7 @@ dev = [
     # .github/workflows/build-test.yaml — ruff format output changes between
     # minor releases, so a range here makes CI reject locally formatted code.
     # tests/test_toolchain_pin.py fails when the two drift apart (#61).
-    "ruff==0.15.8",
+    "ruff==0.16.8",
     "httpx>=0.28",
 ]
 led = [
