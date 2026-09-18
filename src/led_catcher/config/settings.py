@@ -27,6 +27,39 @@ class RedisConfig:
 
 
 @dataclass
+class PanelConfig:
+    """rpi-rgb-led-matrix panel options, from the environment (#68).
+
+    Defaults are what the code hardcoded before there was anything to set.
+    `None` means "leave the library's own default alone" — there is no value
+    this project can pick for `gpio_slowdown` or `pwm_bits` that is right for
+    every board and panel, and pretending otherwise would override a working
+    library default with a guess.
+    """
+
+    rows: int = 64
+    cols: int = 64
+    hardware_mapping: str = "adafruit-hat"
+    brightness: int = 100
+    gpio_slowdown: int | None = None
+    panel_type: str = ""
+    pwm_bits: int | None = None
+
+    def describe(self) -> str:
+        """The effective options, for the line logged at init."""
+        parts = [f"{self.cols}x{self.rows}", self.hardware_mapping, f"brightness={self.brightness}"]
+        if self.gpio_slowdown is not None:
+            parts.append(f"gpio_slowdown={self.gpio_slowdown}")
+        else:
+            parts.append("gpio_slowdown=library default")
+        if self.pwm_bits is not None:
+            parts.append(f"pwm_bits={self.pwm_bits}")
+        if self.panel_type:
+            parts.append(f"panel_type={self.panel_type}")
+        return ", ".join(parts)
+
+
+@dataclass
 class Config:
     redis: RedisConfig
     consumer_group: str = "homerun2-led-catcher"
@@ -45,6 +78,50 @@ class Config:
 
 def _getenv(key: str, default: str = "") -> str:
     return os.environ.get(key, default)
+
+
+def _env_int(key: str, default: int | None, minimum: int | None = None, maximum: int | None = None) -> int | None:
+    """An integer from the environment, or `default` when unset.
+
+    Raises on a value that is not an integer or is out of range. Same call as
+    REDIS_STARTUP_TIMEOUT: a typo in a panel option should fail startup loudly,
+    not quietly restore a setting nobody chose — a silently ignored
+    `LED_GPIO_SLOWDOWN` looks exactly like a panel that needs a different one.
+    """
+    raw = os.environ.get(key, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{key} {raw!r}: must be an integer") from None
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{key} {raw!r}: must be at least {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{key} {raw!r}: must be at most {maximum}")
+    return value
+
+
+def load_panel_config() -> PanelConfig:
+    """Panel options from the environment.
+
+    `hardware_mapping` is not checked against a list of known wirings: the
+    library accepts whatever it was built with, and `adafruit-hat-pwm` only
+    exists when the PWM bridge was soldered and the library built for it. An
+    unknown value makes rpi-rgb-led-matrix abort at init, so the effective
+    options are logged right before that happens.
+    """
+    return PanelConfig(
+        rows=_env_int("LED_ROWS", 64, minimum=1),
+        cols=_env_int("LED_COLS", 64, minimum=1),
+        hardware_mapping=_getenv("LED_HARDWARE_MAPPING", "").strip() or "adafruit-hat",
+        brightness=_env_int("LED_BRIGHTNESS", 100, minimum=1, maximum=100),
+        # No upper bound: the ceiling depends on the board, and the library
+        # rejects what it cannot do.
+        gpio_slowdown=_env_int("LED_GPIO_SLOWDOWN", None, minimum=0),
+        panel_type=_getenv("LED_PANEL_TYPE", "").strip(),
+        pwm_bits=_env_int("LED_PWM_BITS", None, minimum=1, maximum=11),
+    )
 
 
 def parse_streams(streams_env: str, stream_fallback: str) -> list[str]:

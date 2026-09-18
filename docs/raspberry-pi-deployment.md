@@ -166,6 +166,54 @@ Lookup order is `$FONTS_DIR` → repo root → package dir → `/app/fonts` → 
 an absolute path. A rule referencing a missing font logs a warning and falls back
 to `LED_DEFAULT_FONT` instead of killing the process.
 
+## 4b. Panel options
+
+The panel is described by environment variables, not by the source. Defaults are
+what the code used to hardcode, so an existing deployment that sets none of these
+behaves exactly as before.
+
+| Variable | Default | Maps to | Notes |
+|----------|---------|---------|-------|
+| `LED_HARDWARE_MAPPING` | `adafruit-hat` | `hardware_mapping` | `adafruit-hat-pwm` only exists when the PWM mod is soldered *and* the library was built with `HARDWARE_DESC=adafruit-hat-pwm` |
+| `LED_GPIO_SLOWDOWN` | *(library default)* | `gpio_slowdown` | Raise it if the panel ghosts, flickers or shows garbage. `2` is verified on a Pi 3B+ |
+| `LED_BRIGHTNESS` | `100` | `brightness` | 1–100 |
+| `LED_ROWS` / `LED_COLS` | `64` | `rows` / `cols` | |
+| `LED_PANEL_TYPE` | *(empty)* | `panel_type` | For driver chips needing an init sequence, e.g. `FM6126A` |
+| `LED_PWM_BITS` | *(library default)* | `pwm_bits` | 1–11. Lower trades colour depth for refresh rate |
+
+Unset means unset: `LED_GPIO_SLOWDOWN` and `LED_PWM_BITS` are left to the library,
+whose defaults depend on the board. An unparsable or out-of-range value fails
+startup rather than being ignored — a silently dropped slowdown looks exactly like
+a panel that needs a different one.
+
+The effective options are logged twice, before and after the panel comes up:
+
+```
+initializing RGB LED matrix (64x64, adafruit-hat, brightness=100, gpio_slowdown=2)
+RGB LED matrix initialized (64x64, adafruit-hat, brightness=100, gpio_slowdown=2)
+```
+
+An unknown `hardware_mapping` makes rpi-rgb-led-matrix abort the process, which is
+why the first line goes out before the panel is opened: if only the first appears,
+the mapping it names is the one the library rejected.
+
+### Verified on hardware
+
+Pi 3B+, Adafruit HAT, 64x64 HUB75, Raspbian Bullseye, `rgbmatrix` built with
+`HARDWARE_DESC=adafruit-hat-pwm`:
+
+| `LED_HARDWARE_MAPPING` | `LED_GPIO_SLOWDOWN` | Result |
+|---|---|---|
+| `adafruit-hat-pwm` | 2 | lights up |
+| `adafruit-hat` | 2 | lights up |
+
+### Panel sizes other than 64x64
+
+The text, image and GIF modes take their geometry from the panel, so they follow
+`LED_ROWS` / `LED_COLS`. The `score` mode does not: the scoreboard is hand-placed
+pixel art laid out for 64x64, and the simulator draws the same layout. On another
+size it logs a warning and draws what fits.
+
 ## 5. Profile
 
 ```bash
@@ -192,9 +240,19 @@ sudo LED_MODE=led \
 Expected startup lines:
 
 ```
-RGB LED matrix initialized (64x64, adafruit-hat)
+initializing RGB LED matrix (64x64, adafruit-hat, brightness=100, gpio_slowdown=library default)
+RGB LED matrix initialized (64x64, adafruit-hat, brightness=100, gpio_slowdown=library default)
 LED handler active
 consumer starting
+```
+
+If the panel stays dark, ghosts or shows garbage, this is the first thing to
+change — see [Panel options](#4b-panel-options):
+
+```bash
+sudo LED_MODE=led LED_GPIO_SLOWDOWN=2 LED_HARDWARE_MAPPING=adafruit-hat-pwm \
+     REDIS_ADDR=<redis-host> PROFILE_PATH=$PWD/profile.yaml \
+     LOG_FORMAT=text LOG_LEVEL=debug .venv/bin/python -m led_catcher
 ```
 
 `sudo` is required for GPIO. The library drops privileges again right after
@@ -220,6 +278,13 @@ Type=simple
 User=root
 WorkingDirectory=/home/sthings/homerun2-led-catcher
 Environment=LED_MODE=full
+# Panel — see "Panel options". Defaults match what the code used to hardcode;
+# LED_GPIO_SLOWDOWN=2 is the setting verified on a Pi 3B+ with a 64x64 HUB75.
+Environment=LED_HARDWARE_MAPPING=adafruit-hat
+Environment=LED_GPIO_SLOWDOWN=2
+Environment=LED_BRIGHTNESS=100
+Environment=LED_ROWS=64
+Environment=LED_COLS=64
 Environment=REDIS_ADDR=redis.example.com
 Environment=REDIS_PORT=6379
 Environment=REDIS_STREAM=messages
@@ -327,6 +392,9 @@ A growing `pending` count means handlers are slower than the inflow — usually 
 | Text missing, `font ... not found` warning | font not in any search dir | `task fetch-fonts`, or set `FONTS_DIR` |
 | Process exits immediately at startup | `LoadFont()` on a missing path, or no GPIO permission | run with `sudo`, check the font warning above it |
 | Heavy flicker | audio driver still loaded, or no PWM mod | verify the blacklist and that you rebooted; rebuild without `adafruit-hat-pwm` if the bridge is not soldered |
+| Ghosting, garbled rows, wrong colours | GPIO too fast for this panel | raise `LED_GPIO_SLOWDOWN` (`2` on a Pi 3B+), or set `LED_PANEL_TYPE=FM6126A` if the panel needs that init sequence |
+| Process aborts inside `RGBMatrix()` | unknown `hardware_mapping` | the `initializing RGB LED matrix` line above it names the value that was handed over |
+| Scoreboard runs off the panel | `score` is laid out for 64x64 only | keep `LED_ROWS`/`LED_COLS` at 64 for that mode — the warning names the size it got |
 | `JSON.GET returned None` | stream entry points at a missing document | the producer wrote `XADD` without `JSON.SET` |
 | `cannot reach Redis` from the Pi | in-cluster Redis is not exposed | NodePort/Ingress, or an SSH tunnel to the cluster |
 | First run shows nothing, later ones work | group created at `id=0`, backlog replays | expected — `XACK` drains it once |
