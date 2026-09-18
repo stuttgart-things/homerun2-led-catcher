@@ -23,12 +23,38 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
 # How often the idle worker rechecks for shutdown. Only reached when nothing is
 # on the panel and nothing is queued, so it costs nothing to keep short.
 IDLE_POLL_SECONDS = 0.1
+
+# The modes that can hold the panel. The animated ones run for as long as their
+# animation takes, whatever `hold` says (docs/profile-reference.md).
+HOLDING_KINDS = frozenset({"static", "image", "score"})
+
+# Submitted by blank(): not a display, an instruction to leave the panel dark.
+_BLANK = object()
+
+
+class _Interrupted(Exception):
+    """Raised out of a display's wait when blank() cuts it short."""
+
+
+@dataclass(frozen=True)
+class Showing:
+    """What the panel is showing, and since when (wall clock)."""
+
+    config: object
+    since: float
+
+    @property
+    def held(self) -> bool:
+        """True when the display stays up until something replaces it."""
+        return bool(getattr(self.config, "hold", False)) and str(getattr(self.config, "kind", "")) in HOLDING_KINDS
 
 
 class DisplayWorker:
@@ -46,6 +72,10 @@ class DisplayWorker:
         # display and an idle worker wake on either.
         self._wake = threading.Event()
         self._stopping = threading.Event()
+        # Set by blank() and stop(): the only things allowed to cut a finite
+        # display short.
+        self._cut = threading.Event()
+        self._showing: Showing | None = None
         self._thread: threading.Thread | None = None
         # Purely for tests and logging: how many submissions never reached the
         # panel because a newer one replaced them first.
@@ -73,9 +103,37 @@ class DisplayWorker:
             # be lost.
             self._wake.set()
 
+    def blank(self) -> None:
+        """Leave the panel dark, now. Never blocks.
+
+        Unlike submit(), this does not wait for a finite display to run out:
+        someone asking for a dark panel wants it dark, not dark in eight
+        seconds. It still goes through the slot, so a display submitted after
+        it wins.
+        """
+        with self._lock:
+            if self._pending is not None:
+                self._superseded += 1
+            self._pending = _BLANK
+            self._cut.set()
+            self._wake.set()
+
+    @property
+    def showing(self) -> Showing | None:
+        """What is on the panel right now, or None when it is dark."""
+        with self._lock:
+            return self._showing
+
+    @property
+    def alive(self) -> bool:
+        """Whether the worker thread is running. False before start() and after stop()."""
+        thread = self._thread
+        return thread is not None and thread.is_alive()
+
     def stop(self, timeout: float = 5.0) -> None:
         """Stop the worker and leave the panel dark."""
         self._stopping.set()
+        self._cut.set()
         self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout=timeout)
@@ -97,6 +155,10 @@ class DisplayWorker:
             config, self._pending = self._pending, None
             if config is not None:
                 self._wake.clear()
+                # A blank that was superseded has done its job once the slot
+                # is taken; left set, it would cut the next display short.
+                if not self._stopping.is_set():
+                    self._cut.clear()
             return config
 
     def _run(self) -> None:
@@ -108,29 +170,52 @@ class DisplayWorker:
                     continue
                 self._show(config)
         finally:
+            self._set_showing(None)
             self._blank()
 
     def _show(self, config) -> None:
         from led_catcher.display.modes import display_event
 
+        if config is _BLANK:
+            self._set_showing(None)
+            self._blank()
+            return
+
+        showing = Showing(config, time.time())
+        self._set_showing(showing)
         try:
             display_event(self._display, config, wait=self._wait)
+        except _Interrupted:
+            self._set_showing(None)
+            return
         except Exception:
             # A broken font or image must not take the worker down with it, or
             # the panel stays on whatever it happened to be showing.
             logger.exception("display failed: kind=%s", getattr(config, "kind", "?"))
+        # A held display is left lit when its mode returns; anything else has
+        # cleared the panel by now.
+        if not showing.held:
+            with self._lock:
+                if self._showing is showing:
+                    self._showing = None
+
+    def _set_showing(self, showing: Showing | None) -> None:
+        with self._lock:
+            self._showing = showing
 
     def _wait(self, seconds: float, hold: bool = False) -> None:
         """Wait out a display.
 
         A held display waits for a replacement, however long that takes. A
         finite one gets its full time and is not cut short by an arriving
-        message — only by shutdown.
+        message — only by shutdown, or by blank(), which unwinds the mode.
         """
         if hold:
             self._wake.wait()
             return
-        self._stopping.wait(timeout=seconds)
+        self._cut.wait(timeout=seconds)
+        if self._cut.is_set() and not self._stopping.is_set():
+            raise _Interrupted
 
     def _blank(self) -> None:
         try:

@@ -27,6 +27,20 @@ def set_consumer_state(provider: Callable[[], str] | None) -> None:
     _consumer_state = provider
 
 
+_display_alive: Callable[[], bool] | None = None
+
+
+def set_display_state(provider: Callable[[], bool] | None) -> None:
+    """Register whether the display worker thread is alive.
+
+    In standalone mode there is no consumer whose state could stand for the
+    process's health, and a dead display thread is that mode's version of #65:
+    a pod that stays up and does nothing. So a dead worker answers 503.
+    """
+    global _display_alive
+    _display_alive = provider
+
+
 def set_build_info(version: str, commit: str, date: str) -> None:
     _build_info["version"] = version
     _build_info["commit"] = commit
@@ -46,6 +60,12 @@ async def healthz() -> JSONResponse:
         state = _consumer_state()
         body["consumer"] = state
         if state == "failed":
+            body["status"] = "unhealthy"
+            status_code = 503
+    if _display_alive is not None:
+        alive = _display_alive()
+        body["display"] = "running" if alive else "stopped"
+        if not alive:
             body["status"] = "unhealthy"
             status_code = 503
     return JSONResponse(body, status_code=status_code)

@@ -269,6 +269,9 @@ process does not stay root.
 Use `LED_MODE=full` to additionally serve the HTMX simulator on `HEALTH_PORT` —
 handy for watching what the panel *should* be showing from a laptop.
 
+To check the panel without Redis at all, use `LED_MODE=standalone` and drive it
+with `curl` or the simulator's Panel control — see [Display API](display-api.md).
+
 ## 7. Run as a service
 
 ```bash

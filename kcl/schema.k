@@ -28,7 +28,7 @@ schema LedCatcher:
     # Consumer group
     consumerGroup: str = "homerun2-led-catcher"
 
-    # LED mode
+    # LED mode: led, web, full, standalone (no Redis, driven by /display)
     ledMode: str = "web"
 
     # Health endpoint
@@ -48,6 +48,10 @@ schema LedCatcher:
 
     # Secrets
     redisPassword: str = ""
+
+    # Bearer token for POST/DELETE /display. Empty: no Secret, and the write
+    # endpoints are not registered (docs/display-api.md).
+    apiToken: str = ""
 
     # Profile path inside container
     profilePath: str = "/config/profile.yaml"
@@ -117,4 +121,4 @@ colors:
         containerPort >= 1 and containerPort <= 65535, "containerPort must be valid"
         name != "", "name must not be empty"
         namespace != "", "namespace must not be empty"
-        ledMode in ["led", "web", "full"], "ledMode must be led, web, or full"
+        ledMode in ["led", "web", "full", "standalone"], "ledMode must be led, web, full, or standalone"

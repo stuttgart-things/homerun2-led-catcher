@@ -52,6 +52,16 @@ tasks:
     cmds:
       - python -m led_catcher
 
+  run-standalone:
+    desc: Run led-catcher without Redis, driven by the /display API (token "dev")
+    env:
+      LED_MODE: standalone
+      LED_API_TOKEN: dev
+      LOG_FORMAT: text
+      LOG_LEVEL: info
+    cmds:
+      - python -m led_catcher
+
   fetch-fonts:
     desc: Download the full upstream BDF font set into fonts/
     vars:

@@ -33,8 +33,14 @@ def create_web_app(
     date: str = "unknown",
     consumer: RedisConsumer | None = None,
     presets: list[list[str]] | None = None,
+    mode: str = "web",
+    display_api: bool = False,
 ) -> FastAPI:
     """Create the HTMX simulator FastAPI app.
+
+    With ``display_api`` the page gains a panel control, a form that drives the
+    ``/display`` API — the router itself is mounted by the caller. Without it
+    the write endpoints do not exist, so neither does the form.
 
     When a ``consumer`` is passed, the header gains a stream control that shows the
     active subscription and switches it between ``presets``. Without one the
@@ -59,14 +65,17 @@ def create_web_app(
         template = (TEMPLATES_DIR / "index.html").read_text()
         events_html = _render_events(tracker)
         page = (
-            template.replace("{{ events_content }}", events_html)
-            .replace("{{ version }}", version)
+            template.replace("{{ version }}", version)
             .replace("{{ commit }}", commit[:7] if len(commit) > 7 else commit)
             .replace("{{ date }}", date)
             .replace("{{ total_events }}", str(tracker.total))
+            .replace("{{ mode }}", html.escape(mode))
+            .replace("{{ control_panel }}", CONTROL_PANEL_HTML if display_api else "")
+            # User-supplied text from here on (message titles, POST /display),
+            # so after every fixed placeholder: an earlier pass would let a
+            # title containing one be rewritten by a later replace().
+            .replace("{{ events_content }}", events_html)
         )
-        # Substituted last: stream names are user-supplied, and an earlier pass would
-        # let one containing a placeholder be rewritten by a later replace().
         return page.replace("{{ streams_control }}", _render_streams_control(consumer, presets))
 
     @app.get("/events", response_class=HTMLResponse)
@@ -176,8 +185,39 @@ async def event_stream(
         await asyncio.sleep(interval)
 
 
+CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocomplete="off">
+    <h2>Panel control</h2>
+    <label for="pc-token">Token</label>
+    <input type="password" id="pc-token" placeholder="LED_API_TOKEN">
+    <label for="pc-kind">Kind</label>
+    <select id="pc-kind"></select>
+    <label for="pc-text" id="pc-text-label">Text</label>
+    <input type="text" id="pc-text" placeholder="HELLO PANEL">
+    <label for="pc-image" id="pc-image-label" hidden>Image</label>
+    <select id="pc-image" hidden></select>
+    <label for="pc-font">Font</label>
+    <select id="pc-font"></select>
+    <label for="pc-color">Colour</label>
+    <div class="row-inline">
+        <input type="color" id="pc-color" value="#ffa500">
+        <label for="pc-duration">Duration</label>
+        <input type="number" id="pc-duration" value="8" min="1" step="1" style="width:70px">
+        <label><input type="checkbox" id="pc-hold"> hold</label>
+    </div>
+    <div class="actions">
+        <button type="submit">Show</button>
+        <button type="button" class="secondary" id="pc-blank">Blank</button>
+    </div>
+    <div class="status" id="pc-status"></div>
+</form>"""
+
+
 def _render_events(tracker: EventTracker) -> str:
-    """Render the events timeline as HTML."""
+    """Render the events timeline as HTML.
+
+    Every field is escaped: titles come from messages and from POST /display,
+    and the timeline is served to every viewer.
+    """
     events = tracker.recent(30)
     if not events:
         return '<div class="empty-state">No events yet. Waiting for messages...</div>'
@@ -186,11 +226,11 @@ def _render_events(tracker: EventTracker) -> str:
     for e in events:
         rows.append(
             f'<div class="event-row">'
-            f'<span class="event-time">{e.timestamp}</span>'
+            f'<span class="event-time">{html.escape(e.timestamp)}</span>'
             f'<span class="event-dot" style="background:{e.color_hex()}"></span>'
-            f'<span class="event-severity {e.severity_css()}">{e.severity.upper()}</span>'
-            f'<span class="event-system">{e.system}</span>'
-            f'<span class="event-title">{e.title}</span>'
+            f'<span class="event-severity {e.severity_css()}">{html.escape(e.severity.upper())}</span>'
+            f'<span class="event-system">{html.escape(e.system)}</span>'
+            f'<span class="event-title">{html.escape(e.title)}</span>'
             f"</div>"
         )
     return "\n".join(rows)
