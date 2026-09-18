@@ -1,13 +1,13 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:base"
+    "config:recommended"
   ],
   "customManagers": [
     {
       "description": "ruff-version inputs handed to the reusable python-validation workflow (#61)",
       "customType": "regex",
-      "fileMatch": ["^\\.github/workflows/[^/]+\\.ya?ml$"],
+      "managerFilePatterns": ["/^\\.github/workflows/[^/]+\\.ya?ml$/"],
       "matchStrings": ["ruff-version:\\s*[\"']?(?<currentValue>[0-9][^\"'\\s]*)[\"']?"],
       "datasourceTemplate": "pypi",
       "depNameTemplate": "ruff"
