@@ -8,6 +8,12 @@ vars:
   DOCKER_MODULE: github.com/stuttgart-things/dagger/docker@{{ .DAGGER_MODULE_VERSION }}
   TRIVY_MODULE: github.com/stuttgart-things/dagger/trivy@{{ .DAGGER_MODULE_VERSION }}
   KCL_MODULE: github.com/stuttgart-things/dagger/kcl@{{ .DAGGER_MODULE_VERSION }}
+  # Same versions as .github/workflows/build-test.yaml, so `task ci` checks what
+  # CI checks (#61, #88). Renovate keeps both in step with the Dockerfile and
+  # pyproject.toml.
+  PYTHON_VERSION: "3.14-slim" # renovate: python
+  PYTHON_VERSION_FLOOR: "3.11-slim"
+  RUFF_VERSION: "0.16.8"
   REPOSITORY_NAME: stuttgart-things/homerun2-led-catcher
   REGISTRY_URL: ttl.sh
   TAG: 1h
@@ -149,17 +155,18 @@ tasks:
   ci-lint:
     desc: Run ruff linter via Dagger
     cmds:
-      - dagger call -m {{ .PYTHON_MODULE }} lint --src . --progress plain
+      - dagger call -m {{ .PYTHON_MODULE }} lint --src . --python-version {{ .PYTHON_VERSION }} --ruff-version {{ .RUFF_VERSION }} --progress plain
 
   ci-format-check:
     desc: Run ruff format check via Dagger
     cmds:
-      - dagger call -m {{ .PYTHON_MODULE }} format-check --src . --progress plain
+      - dagger call -m {{ .PYTHON_MODULE }} format-check --src . --python-version {{ .PYTHON_VERSION }} --ruff-version {{ .RUFF_VERSION }} --progress plain
 
   ci-test:
-    desc: Run pytest via Dagger
+    desc: Run pytest via Dagger, on the lowest and highest supported Python
     cmds:
-      - dagger call -m {{ .PYTHON_MODULE }} test --src . --progress plain
+      - dagger call -m {{ .PYTHON_MODULE }} test --src . --python-version {{ .PYTHON_VERSION_FLOOR }} --progress plain
+      - dagger call -m {{ .PYTHON_MODULE }} test --src . --python-version {{ .PYTHON_VERSION }} --progress plain
 
   ci-security-scan:
     desc: Run bandit security scan via Dagger

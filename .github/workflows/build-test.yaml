@@ -17,11 +17,21 @@ concurrency:
 
 jobs:
   python-validation:
+    # Both ends of what actually runs (#88): the floor is the Pi (Raspberry Pi
+    # OS Bookworm ships 3.11) and requires-python; the top is the container
+    # image. The top entry follows the Dockerfile through Renovate; the floor
+    # moves only when requires-python does.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.11-slim"
+          - "3.14-slim" # renovate: python
     uses: stuttgart-things/github-workflow-templates/.github/workflows/call-python-validation.yaml@main
     with:
       runs-on: dagger-labda
       module-name: homerun2-led-catcher
-      python-version: "3.12-slim"
+      python-version: ${{ matrix.python-version }}
       # Keep equal to the ruff pin in pyproject.toml [project.optional-dependencies].dev
       ruff-version: "0.16.8"
       environment-name: k8s
