@@ -11,7 +11,7 @@ homerun2-led-catcher — Python microservice that consumes messages from Redis S
 - **LED Matrix**: `rpi-rgb-led-matrix` Python bindings (optional, for Raspberry Pi)
 - **Web**: FastAPI + HTMX + SSE (sse-starlette) for simulator UI
 - **Build**: Dockerfile (multi-stage), no ko (Python project)
-- **CI**: Dagger module `stuttgart-things/dagger/python`, GitHub Actions, Taskfile
+- **CI**: Dagger module `stuttgart-things/dagger/python`, GitHub Actions, Taskfile. Tested on Python **3.11** (the Pi, `requires-python` floor) and **3.14** (the container image); `tests/test_toolchain_pin.py` fails if the Dockerfile, CI matrix, Taskfile or ruff pins drift apart
 - **Pre-commit**: Git hook runs `task precommit` (lint + format-check + test) before every commit
 - **Deploy**: KCL manifests (`kcl/`), Kubernetes
 - **Infra**: GitHub Actions, semantic-release, renovate
