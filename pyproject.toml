@@ -35,7 +35,11 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
-    "ruff>=0.8",
+    # Pinned exactly, and kept equal to ruff-version in
+    # .github/workflows/build-test.yaml — ruff format output changes between
+    # minor releases, so a range here makes CI reject locally formatted code.
+    # tests/test_toolchain_pin.py fails when the two drift apart (#61).
+    "ruff==0.15.8",
     "httpx>=0.28",
 ]
 led = [
