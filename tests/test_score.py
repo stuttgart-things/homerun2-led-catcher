@@ -26,6 +26,9 @@ from led_catcher.profile.engine import DisplayConfig
 class FakeMatrix:
     """Records pixels instead of lighting them."""
 
+    width = 64
+    height = 64
+
     def __init__(self) -> None:
         self.pixels: dict[tuple[int, int], tuple[int, int, int]] = {}
         self.clears = 0

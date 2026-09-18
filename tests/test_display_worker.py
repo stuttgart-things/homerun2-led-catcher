@@ -24,6 +24,9 @@ TICK = 0.05
 class FakeDisplay:
     """A panel that records what was drawn on it and notices interleaving."""
 
+    width = 64
+    height = 64
+
     def __init__(self, draw_time: float = 0.0) -> None:
         self._lock = threading.Lock()
         self._drawing = False

@@ -11,6 +11,8 @@ from functools import lru_cache
 
 from PIL import Image
 
+from led_catcher.display.bdf import load_metrics
+
 logger = logging.getLogger(__name__)
 
 # Try importing rgbmatrix — optional dependency (only on Raspberry Pi)
@@ -21,6 +23,11 @@ try:
 except ImportError:
     HAS_RGBMATRIX = False
     logger.info("rgbmatrix not available — running in software-only mode")
+
+
+PANEL_ROWS = 64
+PANEL_COLS = 64
+"""Panel geometry reported when there is no hardware to ask."""
 
 
 # Distinct fonts a running process is expected to touch. A profile names a
@@ -79,6 +86,16 @@ class MatrixDisplay:
     def available(self) -> bool:
         return self._matrix is not None
 
+    @property
+    def width(self) -> int:
+        """Panel width in pixels."""
+        return self._matrix.width if self._matrix else PANEL_COLS
+
+    @property
+    def height(self) -> int:
+        """Panel height in pixels."""
+        return self._matrix.height if self._matrix else PANEL_ROWS
+
     def show(self, config) -> None:
         """Display content based on a DisplayConfig."""
         from led_catcher.display.modes import display_event
@@ -90,10 +107,12 @@ class MatrixDisplay:
             self._canvas.SetPixel(x, y, r, g, b)
 
     def draw_text(self, font_path: str, x: int, y: int, color: tuple[int, int, int], text: str) -> int:
-        """Draw text and return the text length in pixels."""
+        """Draw text at baseline y and return the width drawn, in pixels."""
         if not self._matrix:
             logger.debug("draw_text (no-op): '%s' at (%d,%d) color=%s", text, x, y, color)
-            return len(text) * 6  # approximate width
+            # Measured from the BDF file, so the width off hardware is the
+            # width on it — a scroll ends in the same place either way (#70).
+            return load_metrics(font_path).text_width(text)
 
         font = _load_font(font_path)
         text_color = graphics.Color(color[0], color[1], color[2])
