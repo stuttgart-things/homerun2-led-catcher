@@ -10,8 +10,9 @@ PROFILE_PATH = Path(__file__).parent / "profile.yaml"
 
 def test_load_profile():
     profile = load_profile(PROFILE_PATH)
-    assert len(profile.rules) == 4
+    assert len(profile.rules) == 5
     assert "github-error" in profile.rules
+    assert "demo-pattern" in profile.rules
     assert "scale-weight" in profile.rules
     assert "default-info" in profile.rules
     assert profile.colors["error"] == (255, 0, 0)

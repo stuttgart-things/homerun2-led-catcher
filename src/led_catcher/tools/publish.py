@@ -44,7 +44,8 @@ DEMO_STEPS: tuple[DemoStep, ...] = (
     DemoStep("static", "scale", "info", "weight", "WEIGHT: 1234"),
     DemoStep("text (scroll)", "demo", "success", "build green", "pipeline succeeded"),
     DemoStep("text (scroll)", "demo", "warning", "disk 85%", "node-01 running low"),
-    DemoStep("gif / image", "github", "error", "build failed", "job #42 exited 1"),
+    DemoStep("image", "demo", "debug", "panel test pattern", "alignment and colour check"),
+    DemoStep("gif", "github", "error", "build failed", "job #42 exited 1"),
 )
 
 
