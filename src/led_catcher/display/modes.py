@@ -19,6 +19,7 @@ from pathlib import Path
 from PIL import Image
 
 from led_catcher.display.bdf import load_metrics
+from led_catcher.display.frames import fit_to_panel, load_animation
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +174,7 @@ def _ticker_text(matrix, config, wait=_sleep) -> None:
 
 
 def _show_image(matrix, config, wait=_sleep) -> None:
-    """Display a static image scaled to 64x64."""
+    """Display a static image scaled to the panel, aspect ratio intact."""
     image_path = _resolve_image(config.image)
     if image_path is None:
         logger.warning("image not found: %s", config.image)
@@ -181,9 +182,17 @@ def _show_image(matrix, config, wait=_sleep) -> None:
         return
 
     hold = getattr(config, "hold", False)
-    img = Image.open(image_path).convert("RGB").resize((64, 64), Image.LANCZOS)
+    try:
+        # Closed straight away rather than left open for the process lifetime.
+        with Image.open(image_path) as source:
+            frame = fit_to_panel(source, matrix.width, matrix.height)
+    except (OSError, ValueError) as exc:
+        logger.warning("cannot display image %s: %s", image_path, exc)
+        _static_text(matrix, config, wait)
+        return
+
     matrix.clear()
-    matrix.show_image(img)
+    matrix.show_image(frame)
     matrix.swap()
 
     wait(config.duration, hold)
@@ -194,31 +203,48 @@ def _show_image(matrix, config, wait=_sleep) -> None:
 
 
 def _show_gif(matrix, config, wait=_sleep) -> None:
-    """Play an animated GIF on the matrix."""
+    """Play an animated GIF on the matrix for the configured duration."""
     image_path = _resolve_image(config.image)
     if image_path is None:
         logger.warning("gif not found: %s", config.image)
         _static_text(matrix, config, wait)
         return
 
-    gif = Image.open(image_path)
-    if not getattr(gif, "is_animated", False):
-        # Static image, just show it
+    # Decoded, converted and scaled once, then cached: doing it inside the loop
+    # put a LANCZOS resize on every frame, and the frame's own wait came on top
+    # of that cost (#71).
+    animation = load_animation(image_path, matrix.width, matrix.height)
+    if animation is None:
+        _static_text(matrix, config, wait)
+        return
+    if not animation.animated:
+        # A single frame is an image, whatever the profile called the mode.
         _show_image(matrix, config, wait)
         return
 
     start = time.monotonic()
-    while time.monotonic() - start < config.duration:
-        for frame_idx in range(gif.n_frames):
-            if time.monotonic() - start >= config.duration:
-                break
-            gif.seek(frame_idx)
-            frame = gif.convert("RGB").resize((64, 64), Image.LANCZOS)
-            matrix.show_image(frame)
-            matrix.swap()
-            # Use GIF frame duration or default to 50ms
-            frame_duration = gif.info.get("duration", 50) / 1000.0
-            wait(max(frame_duration, 0.02))
+    index = 0
+    # Frame time scheduled so far. The loop is driven by this rather than by
+    # the clock alone, because `wait` is not guaranteed to spend the time it is
+    # given: the worker's wait returns the moment the process is shutting down,
+    # and a clock-only loop would then swap frames flat out until the duration
+    # ran out instead of ending. The clock stays as a second bound, for a panel
+    # that renders slower than the GIF asks for.
+    scheduled = 0.0
+    while scheduled < config.duration and time.monotonic() - start < config.duration:
+        shown_at = time.monotonic()
+        matrix.show_image(animation.frames[index])
+        matrix.swap()
+
+        delay = animation.delays[index]
+        scheduled += delay
+        # The frame's own delay, less what putting it up already spent, and
+        # never past the end of the display's duration.
+        spent = time.monotonic() - shown_at
+        remaining = config.duration - (time.monotonic() - start)
+        wait(max(0.0, min(delay - spent, remaining)))
+
+        index = (index + 1) % len(animation)
 
     matrix.clear()
     matrix.swap()
