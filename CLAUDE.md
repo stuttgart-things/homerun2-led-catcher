@@ -2,7 +2,7 @@
 
 ## Project
 
-homerun2-led-catcher — Python microservice that consumes messages from Redis Streams and displays them on a 64x64 RGB LED matrix (via rpi-rgb-led-matrix) with an embedded HTMX web simulator for development and demos.
+homerun2-led-catcher — Python microservice that consumes messages from Redis Streams and displays them on a 64x64 RGB LED matrix (via rpi-rgb-led-matrix) with an embedded HTMX web simulator for development and demos. The panel can also be driven directly over HTTP (`/display` API), and `LED_MODE=standalone` runs it with no Redis at all.
 
 ## Tech Stack
 
@@ -73,12 +73,12 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | Component | Description |
 |-----------|-------------|
 | `consumer/` | Redis Stream consumer with consumer groups |
-| `handlers/` | Log handler, LED handler, health endpoint, `/streams` control endpoint |
+| `handlers/` | Log handler, LED handler, health endpoint, `/streams` control endpoint, `/display` API |
 | `models/` | Message and CaughtMessage dataclasses |
 | `config/` | Env var loading, logging setup |
 | `display/` | LED matrix display modes (static, scroll, ticker, image, GIF) |
 | `profile/` | YAML profile loading + rule matching |
-| `web/` | HTMX simulator with SSE, incl. the header stream control |
+| `web/` | HTMX simulator with SSE, incl. the header stream control and the Panel control form |
 | `tools/` | Operator CLI: `led-catcher-publish` test producer |
 
 ## Key Paths
@@ -89,6 +89,8 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/handlers/led_handler.py` — LED matrix display handler
 - `src/led_catcher/handlers/health.py` — FastAPI health endpoint
 - `src/led_catcher/handlers/control.py` — `GET`/`POST /streams` runtime stream switching
+- `src/led_catcher/handlers/display_api.py` — `GET`/`POST`/`DELETE /display`: token auth, text cap, rate limit
+- `src/led_catcher/display/worker.py` — display worker thread: newest wins, `blank()`, `showing`
 - `src/led_catcher/web/app.py` — simulator routes, `/ui/streams` control partial, SSE generator
 - `src/led_catcher/config/settings.py` — Config dataclass, env loading, JSON log formatter
 - `src/led_catcher/models/message.py` — Message + CaughtMessage dataclasses
@@ -98,6 +100,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/tools/publish.py` — `led-catcher-publish` test message producer
 - `dagger/main.go` — Dagger CI module (delegates to stuttgart-things/dagger/python)
 - `.github/workflows/build-test.yaml` — GitHub Actions CI workflow
+- `docs/display-api.md` — `/display` API and standalone mode
 - `docs/raspberry-pi-deployment.md` — native Pi install, systemd unit, on-device testing
 
 ## Environment Variables
@@ -111,7 +114,10 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `REDIS_STREAM` | `messages` | Single stream to consume (legacy; used when `REDIS_STREAMS` is unset) |
 | `CONSUMER_GROUP` | `homerun2-led-catcher` | Consumer group name |
 | `CONSUMER_NAME` | hostname | Consumer name within group |
-| `LED_MODE` | `full` | Operating mode: `led`, `web`, `full` |
+| `LED_MODE` | `full` | Operating mode: `led`, `web`, `full`, `standalone` (no Redis, panel driven by `/display`) |
+| `LED_API_TOKEN` | *(empty)* | Bearer token for `POST`/`DELETE /display`. Empty: write endpoints are not registered |
+| `LED_API_MAX_TEXT` | `256` | Longest `text` accepted by `POST /display` |
+| `LED_API_RATE_LIMIT` | `30` | `/display` writes per minute, across all callers |
 | `HEALTH_PORT` | `8080` | Health/web server port |
 | `PROFILE_PATH` | `profile.yaml` | Path to display rules YAML |
 | `UI_STREAM_PRESETS` | *(empty)* | Web simulator one-click presets: comma-separated, `\|`-separated within a preset. Defaults to the configured streams as a single preset |
@@ -158,6 +164,9 @@ task ci-build-image    # docker build via dagger
 
 # Run locally (web mode, no hardware)
 task run
+
+# Run without Redis, driven by the /display API (token "dev")
+task run-standalone
 
 # Feed the stream with test messages (needs redis-stack — RedisJSON)
 task redis-stack       # local redis-stack on :6379

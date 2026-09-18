@@ -12,6 +12,9 @@ from dataclasses import dataclass, field
 DEFAULT_REDIS_STARTUP_TIMEOUT = 120.0
 """Seconds the consumer retries Redis at startup before the process exits (#65)."""
 
+LED_MODES = ("led", "web", "full", "standalone")
+"""`standalone` drives the panel from the /display API alone — no Redis (#80)."""
+
 
 @dataclass
 class RedisConfig:
@@ -60,12 +63,29 @@ class PanelConfig:
 
 
 @dataclass
+class ApiConfig:
+    """The /display write API (#80).
+
+    No token means no write API: the endpoints are not registered at all.
+    """
+
+    token: str = ""
+    max_text: int = 256
+    rate_limit: int = 30  # writes per minute, across all callers
+
+    @property
+    def writable(self) -> bool:
+        return bool(self.token)
+
+
+@dataclass
 class Config:
     redis: RedisConfig
     panel: PanelConfig = field(default_factory=PanelConfig)
+    api: ApiConfig = field(default_factory=ApiConfig)
     consumer_group: str = "homerun2-led-catcher"
     consumer_name: str = ""
-    led_mode: str = "full"  # led, web, full
+    led_mode: str = "full"  # led, web, full, standalone
     health_port: int = 8080
     profile_path: str = "profile.yaml"
     ui_stream_presets: list[list[str]] = field(default_factory=list)
@@ -122,6 +142,15 @@ def load_panel_config() -> PanelConfig:
         gpio_slowdown=_env_int("LED_GPIO_SLOWDOWN", None, minimum=0),
         panel_type=_getenv("LED_PANEL_TYPE", "").strip(),
         pwm_bits=_env_int("LED_PWM_BITS", None, minimum=1, maximum=11),
+    )
+
+
+def load_api_config() -> ApiConfig:
+    """The /display API options from the environment."""
+    return ApiConfig(
+        token=_getenv("LED_API_TOKEN", "").strip(),
+        max_text=_env_int("LED_API_MAX_TEXT", 256, minimum=1),
+        rate_limit=_env_int("LED_API_RATE_LIMIT", 30, minimum=1),
     )
 
 
@@ -239,6 +268,7 @@ def load_config() -> Config:
     return Config(
         redis=redis_cfg,
         panel=load_panel_config(),
+        api=load_api_config(),
         consumer_group=_getenv("CONSUMER_GROUP", "homerun2-led-catcher"),
         consumer_name=consumer_name,
         led_mode=_getenv("LED_MODE", "full"),
@@ -310,6 +340,8 @@ class _JsonFormatter(logging.Formatter):
             "attempts",
             "next_sleep",
             "redis_startup_timeout",
+            "mode",
+            "kind",
         ):
             val = getattr(record, key, None)
             if val is not None:

@@ -12,6 +12,7 @@ _redisPort = option("config.redisPort")
 _redisStream = option("config.redisStream")
 _consumerGroup = option("config.consumerGroup")
 _redisPassword = option("config.redisPassword")
+_apiToken = option("config.apiToken")
 _healthPort = option("config.healthPort")
 _ledMode = option("config.ledMode")
 _httpRouteEnabled = option("config.httpRouteEnabled")
@@ -37,6 +38,8 @@ config: schema.LedCatcher = schema.LedCatcher {
         consumerGroup = _consumerGroup
     if _redisPassword:
         redisPassword = _redisPassword
+    if _apiToken:
+        apiToken = _apiToken
     if _healthPort:
         healthPort = _healthPort
     if _ledMode:

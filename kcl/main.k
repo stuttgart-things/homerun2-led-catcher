@@ -21,6 +21,7 @@ manifests = [
         configmap.configMap
         profile_configmap.profileConfigMap
         secret.secretRedis
+        secret.secretApi
         deploy.deployment
         service.service
         httproute.httproute

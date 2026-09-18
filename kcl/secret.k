@@ -1,5 +1,5 @@
 """
-Secret for homerun2-led-catcher (Redis password)
+Secrets for homerun2-led-catcher (Redis password, /display API token)
 """
 
 import base64
@@ -21,3 +21,18 @@ secretRedis = {
         password: base64.encode(config.redisPassword)
     }
 } if config.redisPassword else None
+
+# Secret - /display API token
+secretApi = {
+    apiVersion: "v1"
+    kind: "Secret"
+    metadata: {
+        name: "{}-api".format(config.name)
+        namespace: config.namespace
+        labels: labels.commonLabels
+    }
+    type: "Opaque"
+    data: {
+        token: base64.encode(config.apiToken)
+    }
+} if config.apiToken else None

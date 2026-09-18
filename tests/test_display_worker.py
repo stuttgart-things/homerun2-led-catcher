@@ -400,3 +400,81 @@ def test_a_direct_display_call_does_not_block_on_hold():
 
     assert time.monotonic() - start < 0.5
     assert display.snapshot() == ["7:5"]
+
+
+# ---- blank() and showing (#80) ---------------------------------------------
+
+
+def test_blank_cuts_a_finite_display_short(worker):
+    w, display = worker
+    w.submit(static("long", duration=3600))
+    assert wait_for(lambda: display.snapshot() == ["long"])
+
+    clears_before = display.clears
+    w.blank()
+
+    assert wait_for(lambda: w.showing is None and display.clears > clears_before, timeout=1.0), (
+        "blank() waited for the display to run out instead of darkening the panel"
+    )
+
+
+def test_blank_replaces_a_held_display(worker):
+    w, display = worker
+    w.submit(static("7:5", duration=3600, hold=True))
+    assert wait_for(lambda: w.showing is not None and w.showing.held)
+
+    w.blank()
+
+    assert wait_for(lambda: w.showing is None, timeout=1.0)
+
+
+def test_a_display_submitted_after_blank_still_shows_in_full(worker):
+    # The interrupt must be spent once the slot is taken: left set, it would
+    # cut the display that superseded the blank short on its first wait.
+    w, display = worker
+    w.submit(static("long", duration=3600))
+    assert wait_for(lambda: display.snapshot() == ["long"])
+
+    w.blank()
+    w.submit(static("next", duration=TICK * 6))
+    assert wait_for(lambda: display.snapshot()[-1:] == ["next"])
+
+    time.sleep(TICK * 2)
+    assert w.showing is not None and w.showing.config.text == "next"
+
+
+def test_showing_reports_the_current_display_and_clears_after_it(worker):
+    w, display = worker
+    assert w.showing is None
+
+    w.submit(static("hi", duration=TICK * 4))
+    assert wait_for(lambda: w.showing is not None)
+    assert w.showing.config.text == "hi"
+    assert w.showing.held is False
+
+    assert wait_for(lambda: w.showing is None)
+
+
+def test_a_held_display_is_still_showing_after_its_mode_returns(worker):
+    w, display = worker
+    w.submit(static("7:5", duration=TICK, hold=True))
+    assert wait_for(lambda: display.snapshot() == ["7:5"])
+
+    time.sleep(TICK * 3)
+    assert w.showing is not None and w.showing.held
+
+
+def test_hold_on_an_animated_kind_is_not_reported_as_held():
+    from led_catcher.display.worker import Showing
+
+    assert Showing(DisplayConfig(kind="text", hold=True), 0.0).held is False
+    assert Showing(DisplayConfig(kind="static", hold=True), 0.0).held is True
+
+
+def test_alive_follows_the_thread():
+    w = DisplayWorker(FakeDisplay())
+    assert w.alive is False
+    w.start()
+    assert w.alive is True
+    w.stop(timeout=2)
+    assert w.alive is False

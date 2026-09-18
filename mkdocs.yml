@@ -6,6 +6,7 @@ nav:
   - Hardware Setup: hardware-setup.md
   - Raspberry Pi Deployment: raspberry-pi-deployment.md
   - Profile Reference: profile-reference.md
+  - Display API: display-api.md
   - Deployment: deployment.md
   - Development: development.md
 plugins:

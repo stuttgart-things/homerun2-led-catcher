@@ -83,6 +83,19 @@ deployment = {
                                 value: config.ledMode
                             }
                             {
+                                # Same pattern as REDIS_PASSWORD: optional, so
+                                # without the Secret the pod starts and the
+                                # /display write endpoints stay unregistered.
+                                name: "LED_API_TOKEN"
+                                valueFrom: {
+                                    secretKeyRef: {
+                                        name: "{}-api".format(config.name)
+                                        key: "token"
+                                        optional: True
+                                    }
+                                }
+                            }
+                            {
                                 name: "HEALTH_PORT"
                                 value: str(config.healthPort)
                             }
