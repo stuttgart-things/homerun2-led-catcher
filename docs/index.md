@@ -8,9 +8,10 @@ Consumes messages from Redis Streams and displays them on a 64x64 RGB LED matrix
 
 - **Redis Streams consumer** with consumer groups (same pattern as core-catcher, light-catcher)
 - **Profile-based display routing** — YAML rules map (system, severity) to display modes
-- **5 display modes** — static text, scrolling text, ticker, image, animated GIF
-- **HTMX web simulator** — canvas-based 64x64 LED grid with real-time SSE updates
-- **Configurable modes** — `led` (hardware), `web` (simulator), `full` (both)
+- **6 display modes** — static text, scrolling text, ticker, image, animated GIF, table-tennis scoreboard
+- **`/display` API** — put anything on the panel with `curl`, no Redis needed ([Testing with curl](testing-with-curl.md))
+- **HTMX web simulator** — 64x64 canvas that draws what the panel draws (same fonts, frames and timing), with real-time SSE updates
+- **Configurable modes** — `led` (hardware), `web` (simulator), `full` (both), `standalone` (panel + simulator driven by the API, no Redis)
 - **KCL deployment** — Kubernetes manifests with security hardening
 
 ## Quick Start

@@ -1,5 +1,8 @@
 # Display API and standalone mode
 
+> Want to try it now? [Testing with curl](testing-with-curl.md) has
+> copy-and-paste commands for every mode.
+
 The panel can be driven directly over HTTP, with no message and no profile
 rule in between: `POST /display` says what to show, and the panel shows it.
 `curl`, Home Assistant, a cron job or a script on the Pi can all write to the
