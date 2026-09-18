@@ -19,7 +19,7 @@ func (m *Dagger) Lint(
 	ctx context.Context,
 	src *dagger.Directory,
 	// +optional
-	// +default="0.8.6"
+	// +default="0.16.8"
 	ruffVersion string,
 ) (string, error) {
 	return dag.Python().Lint(ctx, src, dagger.PythonLintOpts{
@@ -32,7 +32,8 @@ func (m *Dagger) Test(
 	ctx context.Context,
 	src *dagger.Directory,
 	// +optional
-	// +default="3.12-slim"
+	// renovate: python
+	// +default="3.14-slim"
 	pythonVersion string,
 ) (string, error) {
 	return dag.Python().Test(ctx, src, dagger.PythonTestOpts{
