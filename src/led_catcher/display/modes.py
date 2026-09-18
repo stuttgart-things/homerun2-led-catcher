@@ -18,6 +18,8 @@ from pathlib import Path
 
 from PIL import Image
 
+from led_catcher.display.bdf import load_metrics
+
 logger = logging.getLogger(__name__)
 
 # Font used when a profile references a font that cannot be found.
@@ -103,10 +105,28 @@ def _static_text(matrix, config, wait=_sleep) -> None:
     font_path = _resolve_font(config.font)
     hold = getattr(config, "hold", False)
 
-    matrix.clear()
+    metrics = load_metrics(font_path)
+    text_width = metrics.text_width(text)
+    baseline = metrics.baseline_for_centered_text(matrix.height)
+    x = max(0, (matrix.width - text_width) // 2)
 
-    # Center vertically at y=36 (rough center for 64px height)
-    matrix.draw_text(font_path, 2, 36, color, text)
+    if text_width > matrix.width:
+        # Deliberately not turned into a scroll: `static` and `text` are
+        # separate modes a profile picks between, and a held static display —
+        # the scoreboard's fallback for a payload it cannot parse — has to stay
+        # on the panel rather than scroll off it. So: clip, and say so.
+        logger.warning(
+            "static text %r needs %dpx on a %dpx panel in %s — %dpx clipped; "
+            "use kind 'text' or 'ticker' to scroll it instead",
+            text,
+            text_width,
+            matrix.width,
+            Path(font_path).name,
+            text_width - matrix.width,
+        )
+
+    matrix.clear()
+    matrix.draw_text(font_path, x, baseline, color, text)
     matrix.swap()
 
     wait(config.duration, hold)
@@ -125,16 +145,20 @@ def _scroll_text(matrix, config, wait=_sleep, loops: int = 1) -> None:
     color = config.color
     font_path = _resolve_font(config.font)
 
-    # Approximate text width (6px per char for BDF fonts)
-    text_width = len(text) * 6
-    start_x = 64
+    # Measured in the font actually loaded, not assumed to be 6px/char: with
+    # 7x13 the old estimate ended the scroll while the tail was still on the
+    # panel, with 4x6 it kept scrolling an empty panel (#70).
+    metrics = load_metrics(font_path)
+    text_width = metrics.text_width(text)
+    baseline = metrics.baseline_for_centered_text(matrix.height)
+    start_x = matrix.width
     end_x = -text_width
 
     for _ in range(loops):
         x = start_x
         while x > end_x:
             matrix.clear()
-            matrix.draw_text(font_path, x, 36, color, text)
+            matrix.draw_text(font_path, x, baseline, color, text)
             matrix.swap()
             wait(0.03)  # ~30fps
             x -= 1
