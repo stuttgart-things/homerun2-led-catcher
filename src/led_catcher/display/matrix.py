@@ -11,6 +11,7 @@ from functools import lru_cache
 
 from PIL import Image
 
+from led_catcher.config.settings import PanelConfig, load_panel_config
 from led_catcher.display.bdf import load_metrics
 
 logger = logging.getLogger(__name__)
@@ -23,11 +24,6 @@ try:
 except ImportError:
     HAS_RGBMATRIX = False
     logger.info("rgbmatrix not available — running in software-only mode")
-
-
-PANEL_ROWS = 64
-PANEL_COLS = 64
-"""Panel geometry reported when there is no hardware to ask."""
 
 
 # Distinct fonts a running process is expected to touch. A profile names a
@@ -63,38 +59,60 @@ def clear_font_cache() -> None:
 class MatrixDisplay:
     """Abstraction over the physical LED matrix."""
 
-    def __init__(self) -> None:
+    def __init__(self, panel: PanelConfig | None = None) -> None:
+        self._panel = panel if panel is not None else load_panel_config()
         self._matrix = None
         self._canvas = None
         if HAS_RGBMATRIX:
             self._init_hardware()
 
     def _init_hardware(self) -> None:
+        panel = self._panel
         options = RGBMatrixOptions()
-        options.rows = 64
-        options.cols = 64
+        options.rows = panel.rows
+        options.cols = panel.cols
         options.chain_length = 1
         options.parallel = 1
-        options.hardware_mapping = "adafruit-hat"
+        options.hardware_mapping = panel.hardware_mapping
+        options.brightness = panel.brightness
         options.drop_privileges = True
 
+        # Only set what was actually configured. The library picks these per
+        # board, and writing a value here would replace a working default with
+        # this project's guess.
+        if panel.gpio_slowdown is not None:
+            options.gpio_slowdown = panel.gpio_slowdown
+        if panel.pwm_bits is not None:
+            options.pwm_bits = panel.pwm_bits
+        if panel.panel_type:
+            options.panel_type = panel.panel_type
+
+        # Logged before RGBMatrix() rather than after: an unknown
+        # hardware_mapping makes the library abort the process here, and this
+        # line is what says which one it was handed.
+        logger.info("initializing RGB LED matrix (%s)", panel.describe())
         self._matrix = RGBMatrix(options=options)
         self._canvas = self._matrix.CreateFrameCanvas()
-        logger.info("RGB LED matrix initialized (64x64, adafruit-hat)")
+        logger.info("RGB LED matrix initialized (%s)", panel.describe())
 
     @property
     def available(self) -> bool:
         return self._matrix is not None
 
     @property
+    def panel(self) -> PanelConfig:
+        """The options this display was built with."""
+        return self._panel
+
+    @property
     def width(self) -> int:
-        """Panel width in pixels."""
-        return self._matrix.width if self._matrix else PANEL_COLS
+        """Panel width in pixels — the configured geometry when there is no hardware."""
+        return self._matrix.width if self._matrix else self._panel.cols
 
     @property
     def height(self) -> int:
-        """Panel height in pixels."""
-        return self._matrix.height if self._matrix else PANEL_ROWS
+        """Panel height in pixels — the configured geometry when there is no hardware."""
+        return self._matrix.height if self._matrix else self._panel.rows
 
     def show(self, config) -> None:
         """Display content based on a DisplayConfig."""

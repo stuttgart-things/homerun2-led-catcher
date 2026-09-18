@@ -19,6 +19,11 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
+# The scoreboard is hand-placed pixel art: the row allocation below, the
+# seven-segment geometry and the simulator's copy of the same layout are all
+# drawn for a 64x64 panel. Unlike the text and image modes, which now take
+# their geometry from the panel (#70, #71), this one does not scale — a panel
+# of another size is warned about rather than silently drawn off the edge.
 WIDTH = 64
 HEIGHT = 64
 
@@ -335,8 +340,29 @@ def render(matrix, score: Score) -> None:
         draw_text_centered(matrix, score.source, Y_SOURCE, COLOR_FAINT)
 
 
+def _warn_once_about_panel_size(matrix) -> None:
+    """Say so when the scoreboard is drawn on a panel it was not laid out for."""
+    width = getattr(matrix, "width", WIDTH)
+    height = getattr(matrix, "height", HEIGHT)
+    if (width, height) == (WIDTH, HEIGHT) or _warn_once_about_panel_size.warned:
+        return
+    _warn_once_about_panel_size.warned = True
+    logger.warning(
+        "the score display is laid out for %dx%d and this panel is %dx%d — "
+        "the scoreboard will be clipped or leave the panel part-dark",
+        WIDTH,
+        HEIGHT,
+        width,
+        height,
+    )
+
+
+_warn_once_about_panel_size.warned = False
+
+
 def display_score(matrix, config, wait) -> None:
     """Display mode entry point. Mirrors the still modes' clear/draw/hold cycle."""
+    _warn_once_about_panel_size(matrix)
     score = parse_score(config.text)
     if score is None:
         # Deliberately not a blank panel: a scoreboard that goes dark reads as
