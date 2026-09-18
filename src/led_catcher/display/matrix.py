@@ -7,6 +7,7 @@ stub when running without hardware (dev machines, CI, web-only mode).
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 
 from PIL import Image
 
@@ -20,6 +21,36 @@ try:
 except ImportError:
     HAS_RGBMATRIX = False
     logger.info("rgbmatrix not available — running in software-only mode")
+
+
+# Distinct fonts a running process is expected to touch. A profile names a
+# handful; the bound is here so a pathological profile cannot grow the cache
+# without limit.
+FONT_CACHE_SIZE = 32
+
+
+@lru_cache(maxsize=FONT_CACHE_SIZE)
+def _load_font(font_path: str):
+    """Load a BDF font, once per path.
+
+    `graphics.Font().LoadFont()` re-reads and re-parses the BDF file from disk
+    on every call. A scroll draws a frame every 30 ms, so loading per draw
+    parsed the file ~30x/s for the length of the scroll — the parse time landed
+    on top of every frame's budget and made the scroll speed uneven on a
+    Pi 3B+ (#69).
+    """
+    font = graphics.Font()
+    font.LoadFont(font_path)
+    logger.debug("loaded BDF font %s", font_path)
+    return font
+
+
+def clear_font_cache() -> None:
+    """Drop every cached font.
+
+    For tests, and for a process whose font directory changed underneath it.
+    """
+    _load_font.cache_clear()
 
 
 class MatrixDisplay:
@@ -64,8 +95,7 @@ class MatrixDisplay:
             logger.debug("draw_text (no-op): '%s' at (%d,%d) color=%s", text, x, y, color)
             return len(text) * 6  # approximate width
 
-        font = graphics.Font()
-        font.LoadFont(font_path)
+        font = _load_font(font_path)
         text_color = graphics.Color(color[0], color[1], color[2])
         return graphics.DrawText(self._canvas, font, x, y, text_color, text)
 
