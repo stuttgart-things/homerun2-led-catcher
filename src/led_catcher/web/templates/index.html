@@ -84,6 +84,9 @@
             flex-wrap: wrap;
         }
 
+        /* No consumer (web without Redis control, standalone): nothing to show */
+        .stream-badge:empty { display: none; }
+
         .stream-label { color: rgba(255,255,255,0.75); }
 
         .stream-override {
