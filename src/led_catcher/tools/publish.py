@@ -131,11 +131,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _apply_step(args: argparse.Namespace, step: DemoStep) -> None:
+    args.system = step.system
+    args.severity = step.severity
+    args.title = step.title
+    args.message = step.message
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     cfg = load_config()
 
     if args.dry_run:
+        # No Redis connection: print what each message would carry and stop.
+        if args.demo:
+            for step in DEMO_STEPS:
+                _apply_step(args, step)
+                route = f"{step.system}/{step.severity}"
+                print(f"  {route:<16} → expect {step.expect}")
+                print(json.dumps(build_payload(args), indent=2))
+            return 0
         print(json.dumps(build_payload(args), indent=2))
         return 0
 
@@ -150,10 +165,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.demo:
         for step in DEMO_STEPS:
-            args.system = step.system
-            args.severity = step.severity
-            args.title = step.title
-            args.message = step.message
+            _apply_step(args, step)
             object_id, entry_id = publish(client, args.stream, build_payload(args), args.key_prefix)
             route = f"{step.system}/{step.severity}"
             print(f"  {entry_id}  {route:<16} → expect {step.expect:<14} ({object_id})")

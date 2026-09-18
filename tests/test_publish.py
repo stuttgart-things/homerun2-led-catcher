@@ -9,6 +9,7 @@ from led_catcher.tools.publish import (
     SEVERITIES,
     _module_names,
     build_payload,
+    main,
     parse_args,
 )
 
@@ -67,3 +68,38 @@ def test_module_names_handles_dict_and_pair_shapes():
     assert _module_names([{"name": "ReJSON", "ver": 20609}]) == {"rejson"}
     assert _module_names([["name", "ReJSON", "ver", 20609]]) == {"rejson"}
     assert _module_names(None) == set()
+
+
+def _no_client(*_args, **_kwargs):
+    raise AssertionError("--dry-run must not open a Redis client")
+
+
+def test_demo_dry_run_prints_every_step_without_redis(monkeypatch, capsys):
+    monkeypatch.setattr("led_catcher.tools.publish._connect", _no_client)
+    assert main(["--demo", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    payloads = [json.loads(block) for block in _json_blocks(out)]
+    assert len(payloads) == len(DEMO_STEPS)
+    for step, payload in zip(DEMO_STEPS, payloads, strict=True):
+        assert (payload["system"], payload["severity"], payload["title"]) == (step.system, step.severity, step.title)
+        assert f"expect {step.expect}" in out
+
+
+def test_dry_run_prints_single_payload_without_redis(monkeypatch, capsys):
+    monkeypatch.setattr("led_catcher.tools.publish._connect", _no_client)
+    assert main(["--dry-run", "--title", "hi"]) == 0
+    assert json.loads(capsys.readouterr().out)["title"] == "hi"
+
+
+def _json_blocks(out: str) -> list[str]:
+    """Split the dry-run output into the pretty-printed JSON objects it contains."""
+    blocks, current = [], []
+    for line in out.splitlines():
+        if line == "{":
+            current = [line]
+        elif current:
+            current.append(line)
+            if line == "}":
+                blocks.append("\n".join(current))
+                current = []
+    return blocks

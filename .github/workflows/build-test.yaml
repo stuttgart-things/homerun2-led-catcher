@@ -23,7 +23,7 @@ jobs:
       module-name: homerun2-led-catcher
       python-version: "3.12-slim"
       # Keep equal to the ruff pin in pyproject.toml [project.optional-dependencies].dev
-      ruff-version: "0.15.8"
+      ruff-version: "0.16.8"
       environment-name: k8s
       accept-linterrors: false
       accept-failedtests: false
