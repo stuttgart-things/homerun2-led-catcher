@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -25,6 +26,20 @@ class LedEvent:
     # hardware (#62).
     duration: float = 5.0
     hold: bool = False
+    # What the panel draws, so the canvas can draw the same (#83): the rule's
+    # rendered text (not the message title), and the font and image it names.
+    text: str = ""
+    font: str = "6x10.bdf"
+    image: str = ""
+    # False when no rule matched: the panel shows nothing for it, and neither
+    # should the canvas. The timeline still lists it.
+    matched: bool = True
+    # Wall-clock time of the event, so a page opened later can tell whether a
+    # finite display is still up.
+    at: float = field(default_factory=time.time)
+    # Assigned by EventTracker.record — a sequence the browser can follow
+    # without guessing from timestamps.
+    id: int = 0
 
     def severity_css(self) -> str:
         return {
@@ -50,8 +65,9 @@ class EventTracker:
 
     def record(self, event: LedEvent) -> None:
         with self._lock:
-            self._events.appendleft(event)
             self._version += 1
+            event.id = self._version
+            self._events.appendleft(event)
 
     def recent(self, n: int = 20) -> list[LedEvent]:
         with self._lock:

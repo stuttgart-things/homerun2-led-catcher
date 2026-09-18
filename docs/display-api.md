@@ -134,3 +134,24 @@ When the write API is enabled, the simulator page shows a **Panel control**
 form under the canvas. It is a plain client of the endpoints above. The token
 is typed in, kept in the tab's `sessionStorage`, and sent only as the
 `Authorization` header. It is never embedded in the page.
+
+## The simulator canvas draws what the panel draws
+
+The canvas renders every display the way the matrix does (#83), from the
+panel's own inputs:
+
+- **Text** uses the same BDF fonts. `GET /api/preview/text?font=…&text=…`
+  returns the glyph bitmaps and font box, so widths, centring and scroll length
+  match the panel to the pixel. `static` is centred, `text` scrolls 1px per 30 ms,
+  and `ticker` scrolls three times.
+- **Images and GIFs** use the frames the panel plays. `GET /api/preview/image/{name}`
+  returns the frames from the same `load_animation`, so scaling, letterboxing
+  and frame timing are the panel's own.
+- **Replacement** follows the display worker: a held display gives way at once,
+  a finite one keeps its time, and a blank is immediate.
+- A message that no rule matched is listed in the timeline but not drawn,
+  because the panel does not show it either.
+- When nothing is displayed, the canvas stays dark, as the panel does.
+
+This makes the canvas a reference for hardware checks: it shows what the panel
+*should* show, side by side with what it does show.

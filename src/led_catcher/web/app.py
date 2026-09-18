@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from led_catcher.web.events import EventTracker
+from led_catcher.web.preview import create_preview_router
 
 if TYPE_CHECKING:
     from led_catcher.consumer import RedisConsumer
@@ -52,6 +53,8 @@ def create_web_app(
 
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    app.include_router(create_preview_router())
 
     @app.get("/", response_class=HTMLResponse)
     async def index(response: Response):
@@ -131,6 +134,12 @@ def create_web_app(
                 "color": e.color_hex(),
                 "duration": e.duration,
                 "hold": e.hold,
+                "text": e.text,
+                "font": e.font,
+                "image": e.image,
+                "matched": e.matched,
+                "at": e.at,
+                "id": e.id,
             }
             for e in tracker.recent(50)
         ]

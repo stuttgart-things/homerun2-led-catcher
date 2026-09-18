@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from pathlib import Path
 
@@ -30,6 +31,18 @@ DEFAULT_FONT = "6x10.bdf"
 _PACKAGE_DIR = Path(__file__).resolve().parent.parent
 # Repo root when running from the src/ layout (editable install or checkout)
 _REPO_ROOT = _PACKAGE_DIR.parent.parent
+
+
+# A bare file name. Anything reaching the lookup from outside — the /display
+# API, the simulator's preview routes — must be one: a path would let a caller
+# point the panel at any file on the host, and rpi-rgb-led-matrix aborts the
+# process on a font it cannot parse.
+_BARE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def is_bare_name(name: str) -> bool:
+    """True for a plain asset file name, with no directory part."""
+    return bool(_BARE_NAME.match(name))
 
 
 def _asset_dirs(env_var: str, name: str) -> list[Path]:

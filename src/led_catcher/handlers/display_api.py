@@ -18,7 +18,6 @@ the panel sees.
 from __future__ import annotations
 
 import logging
-import re
 import secrets
 import threading
 import time
@@ -30,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from led_catcher.config.settings import ApiConfig
-from led_catcher.display.modes import _resolve_image, fonts_dirs, visual_aid_dirs
+from led_catcher.display.modes import _resolve_image, fonts_dirs, is_bare_name, visual_aid_dirs
 from led_catcher.profile.engine import DEFAULT_COLORS, DisplayConfig
 
 if TYPE_CHECKING:
@@ -46,11 +45,6 @@ IMAGE_KINDS = {"image", "gif"}
 # Longest a finite display may ask for. Anything meant to stay up longer is
 # what `hold` is for, and a held display gives way to the next one.
 MAX_DURATION_SECONDS = 600.0
-
-# A bare file name. Fonts and images are looked up in their asset directories;
-# a path would let a caller point the panel at any file on the host, and
-# rpi-rgb-led-matrix aborts the process on a font it cannot parse.
-_ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 IMAGE_SUFFIXES = {".png", ".gif", ".jpg", ".jpeg", ".bmp", ".webp"}
 
@@ -82,7 +76,7 @@ class DisplayRequest(BaseModel):
     @field_validator("font", "image")
     @classmethod
     def _bare_name(cls, value: str) -> str:
-        if value and not _ASSET_NAME.match(value):
+        if value and not is_bare_name(value):
             raise ValueError("must be a file name, not a path")
         return value
 
@@ -116,7 +110,7 @@ def list_assets(dirs, suffixes: set[str]) -> list[str]:
         if not directory.is_dir():
             continue
         for path in directory.iterdir():
-            if path.is_file() and path.suffix.lower() in suffixes and _ASSET_NAME.match(path.name):
+            if path.is_file() and path.suffix.lower() in suffixes and is_bare_name(path.name):
                 names.add(path.name)
     return sorted(names)
 
@@ -278,5 +272,8 @@ def _record(tracker: EventTracker, config: DisplayConfig) -> None:
             color=config.color,
             duration=config.duration,
             hold=config.hold,
+            text=config.text,
+            font=config.font,
+            image=config.image,
         )
     )
