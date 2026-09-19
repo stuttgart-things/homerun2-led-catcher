@@ -84,6 +84,10 @@ sudo LED_MODE=led REDIS_ADDR=<redis-host> PROFILE_PATH=$PWD/profile.yaml .venv/b
 sudo LED_MODE=full REDIS_ADDR=<redis-host> PROFILE_PATH=$PWD/profile.yaml .venv/bin/python -m led_catcher
 ```
 
+**As a service, or all of it in one go:** the systemd units (standalone and with
+Redis) and an Ansible play that does the whole Pi base install are in
+[docs/raspberry-pi-deployment.md](docs/raspberry-pi-deployment.md#7-run-as-a-service).
+
 > **Note:** `sudo` is required for GPIO access. `rpi-rgb-led-matrix` drops
 > privileges again after initialising the panel.
 

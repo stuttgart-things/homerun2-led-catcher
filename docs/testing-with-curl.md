@@ -27,8 +27,9 @@ sudo LED_MODE=standalone LED_API_TOKEN=change-me LED_GPIO_SLOWDOWN=2 \
      LOG_FORMAT=text .venv/bin/python -m led_catcher
 ```
 
-Already running as the systemd unit? Add `Environment=LED_API_TOKEN=change-me`
-to it and restart it.
+Already running as the systemd service? Put `LED_API_TOKEN=change-me` into
+`/etc/default/led-catcher` and restart it; see
+[Run as a service](raspberry-pi-deployment.md#7-run-as-a-service).
 
 **Kubernetes:** set `apiToken` in the KCL config (it becomes the `<name>-api`
 Secret), then:
