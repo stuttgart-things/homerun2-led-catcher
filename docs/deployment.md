@@ -62,6 +62,27 @@ config.redisPassword: my-secret-password
 
 This creates a Kubernetes Secret and references it in the Deployment.
 
+### With the `/display` API
+
+```yaml
+config.apiToken: my-api-token
+```
+
+This creates the Secret `<name>-api`, which the Deployment reads into `LED_API_TOKEN`
+(`optional: true`, like the Redis password). Without a token the write endpoints of
+`/display` are not registered. See [Display API](display-api.md).
+
+### Standalone (no Redis)
+
+```yaml
+config.ledMode: standalone
+config.apiToken: my-api-token
+```
+
+The simulator is driven only by the `/display` API, and nothing connects to Redis.
+In a cluster there is no panel, so this is a demo or a place to try the API. The
+Redis settings can stay; they are ignored.
+
 ### Apply
 
 ```bash

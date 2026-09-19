@@ -1,14 +1,19 @@
 site_name: homerun2-led-catcher
-site_description: RGB LED matrix catcher for homerun2 — displays notifications on LED matrix with HTMX web simulator
+site_description: homerun2 notifications on a 64x64 RGB LED matrix — Redis Streams consumer, /display HTTP API, and a web simulator that draws what the panel draws
 nav:
   - Home: index.md
-  - Architecture: architecture.md
-  - Hardware Setup: hardware-setup.md
-  - Raspberry Pi Deployment: raspberry-pi-deployment.md
-  - Profile Reference: profile-reference.md
-  - Display API: display-api.md
-  - Testing with curl: testing-with-curl.md
-  - Deployment: deployment.md
+  - Getting started:
+      - Architecture: architecture.md
+      - Testing with curl: testing-with-curl.md
+  - Raspberry Pi:
+      - Hardware Setup: hardware-setup.md
+      - Install: raspberry-pi-deployment.md
+      - Run as a service: raspberry-pi-service.md
+      - Operations: raspberry-pi-operations.md
+  - Reference:
+      - Display API: display-api.md
+      - Profile Reference: profile-reference.md
+  - Kubernetes: deployment.md
   - Development: development.md
 plugins:
   - techdocs-core

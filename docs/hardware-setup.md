@@ -79,8 +79,8 @@ Feed the panel with test messages:
 .venv/bin/led-catcher-publish --demo
 ```
 
-See [Raspberry Pi Deployment](raspberry-pi-deployment.md) for the systemd unit and
-the full test workflow.
+The systemd unit and the Ansible play are in [Run as a service](raspberry-pi-service.md),
+the test workflow in [Raspberry Pi Operations](raspberry-pi-operations.md).
 
 ## Matrix Configuration
 

@@ -29,7 +29,7 @@ sudo LED_MODE=standalone LED_API_TOKEN=change-me LED_GPIO_SLOWDOWN=2 \
 
 Already running as the systemd service? Put `LED_API_TOKEN=change-me` into
 `/etc/default/led-catcher` and restart it; see
-[Run as a service](raspberry-pi-deployment.md#7-run-as-a-service).
+[Run as a service](raspberry-pi-service.md).
 
 **Kubernetes:** set `apiToken` in the KCL config (it becomes the `<name>-api`
 Secret), then:

@@ -103,7 +103,9 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `dagger/main.go` — Dagger CI module (delegates to stuttgart-things/dagger/python)
 - `.github/workflows/build-test.yaml` — GitHub Actions CI workflow
 - `docs/display-api.md` — `/display` API and standalone mode
-- `docs/raspberry-pi-deployment.md` — native Pi install, systemd unit, on-device testing
+- `docs/raspberry-pi-deployment.md` — native Pi install: SD card, prep, venv + matrix library, first run
+- `docs/raspberry-pi-service.md` — systemd units (standalone, full) and the Ansible play
+- `docs/raspberry-pi-operations.md` — on-device testing, troubleshooting, updating
 
 ## Environment Variables
 
