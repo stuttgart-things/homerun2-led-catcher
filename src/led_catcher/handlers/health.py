@@ -50,6 +50,8 @@ def set_build_info(version: str, commit: str, date: str) -> None:
 @health_app.get("/healthz")
 @health_app.get("/health")
 async def healthz() -> JSONResponse:
+    """Liveness and build info. 503 when the consumer failed or, in standalone mode,
+    the display worker stopped."""
     body: dict = {
         "status": "ok",
         "time": datetime.now(timezone.utc).isoformat(),

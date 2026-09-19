@@ -3,15 +3,22 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: homerun2-led-catcher
-  description: RGB LED matrix catcher for homerun2 — displays notifications on LED matrix with HTMX web simulator
+  title: homerun2 LED catcher
+  description: >-
+    Shows homerun2 notifications from Redis Streams on a 64x64 RGB LED matrix.
+    The panel can also be driven directly over HTTP (/display API), and a web
+    simulator draws what the panel draws.
   annotations:
     github.com/project-slug: stuttgart-things/homerun2-led-catcher
     backstage.io/techdocs-ref: url:https://github.com/stuttgart-things/homerun2-led-catcher/tree/main
-    backstage.io/source-location: url:https://github.com/stuttgart-things/homerun2-led-catcher
+    backstage.io/source-location: url:https://github.com/stuttgart-things/homerun2-led-catcher/tree/main/
+    # Set by the KCL manifests (kcl/labels.k), for the Kubernetes plugin
+    backstage.io/kubernetes-label-selector: app.kubernetes.io/name=homerun2-led-catcher
   tags:
     - consumer
     - redis
     - python
+    - fastapi
     - homerun2
     - led-matrix
     - htmx
@@ -20,11 +27,56 @@ metadata:
     - url: https://github.com/stuttgart-things/homerun2-led-catcher
       title: GitHub Repository
       icon: github
+    - url: https://stuttgart-things.github.io/homerun2-led-catcher/
+      title: Documentation
+      icon: docs
+    - url: https://stuttgart-things.github.io/homerun2-led-catcher/testing-with-curl/
+      title: Testing with curl
+      icon: docs
+    - url: https://github.com/stuttgart-things/homerun2-led-catcher/releases
+      title: Releases
+      icon: github
+    - url: https://github.com/stuttgart-things/homerun2-led-catcher/pkgs/container/homerun2-led-catcher
+      title: Container image
+      icon: dashboard
+    - url: https://github.com/stuttgart-things/ansible/blob/main/plays/homerun2-led-catcher-pi.yaml
+      title: Raspberry Pi install (Ansible)
+      icon: github
 spec:
   type: service
   lifecycle: experimental
   owner: platform-team
   system: homerun2
+  providesApis:
+    - homerun2-led-catcher-api
   dependsOn:
     - resource:redis
     - component:homerun2-omni-pitcher
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: homerun2-led-catcher-api
+  title: homerun2 LED catcher HTTP API
+  description: >-
+    /display puts something on the panel directly (bearer token), /streams switches
+    the consumed Redis streams at runtime, /healthz is liveness and build info.
+  annotations:
+    github.com/project-slug: stuttgart-things/homerun2-led-catcher
+    backstage.io/source-location: url:https://github.com/stuttgart-things/homerun2-led-catcher/tree/main/
+  tags:
+    - homerun2
+    - led-matrix
+    - rest
+  links:
+    - url: https://stuttgart-things.github.io/homerun2-led-catcher/display-api/
+      title: Display API guide
+      icon: docs
+spec:
+  type: openapi
+  lifecycle: experimental
+  owner: platform-team
+  system: homerun2
+  # Generated from the routers (task openapi); tests/test_openapi.py fails when stale
+  definition:
+    $text: ./docs/openapi.yaml
