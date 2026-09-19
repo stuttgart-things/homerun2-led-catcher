@@ -58,6 +58,11 @@ tasks:
     cmds:
       - python -m led_catcher
 
+  openapi:
+    desc: Regenerate docs/openapi.yaml from the routers (tests fail while it is stale)
+    cmds:
+      - python -m led_catcher.openapi > docs/openapi.yaml
+
   run-standalone:
     desc: Run led-catcher without Redis, driven by the /display API (token "dev")
     env:

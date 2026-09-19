@@ -1,0 +1,300 @@
+openapi: 3.1.0
+info:
+  title: homerun2-led-catcher
+  description: |
+    HTTP API of homerun2-led-catcher, the homerun2 service that shows notifications
+    on a 64x64 RGB LED matrix.
+
+    - **`/display`** puts something on the panel directly, with no message and no
+      profile rule. `POST` and `DELETE` need `Authorization: Bearer <LED_API_TOKEN>`;
+      without the token set they are not registered at all. Writes are rate-limited
+      across all callers (`LED_API_RATE_LIMIT`, default 30 a minute).
+    - **`/streams`** switches the Redis streams the service consumes, at runtime.
+      Not available in `LED_MODE=standalone`.
+    - **`/healthz`** is liveness plus build info.
+
+    Guides: [Display API](https://stuttgart-things.github.io/homerun2-led-catcher/display-api/),
+    [Testing with curl](https://stuttgart-things.github.io/homerun2-led-catcher/testing-with-curl/).
+  version: '1'
+paths:
+  /display:
+    get:
+      tags:
+      - display
+      summary: What is on the panel right now
+      description: 'Unauthenticated: it says nothing that is not already lit up in the room.'
+      operationId: get_display_display_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Get Display Display Get
+    post:
+      tags:
+      - display
+      summary: Put something on the panel
+      description: |-
+        Shown like a matched message: a held display gives way at once, a finite
+        one keeps its full duration, and the newest waiting display wins.
+      operationId: post_display_display_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisplayRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Post Display Display Post
+        '401':
+          description: Missing or wrong bearer token
+        '429':
+          description: Over LED_API_RATE_LIMIT writes per minute; see Retry-After
+        '400':
+          description: The kind is missing what it draws, text too long, or an unknown colour name
+        '404':
+          description: The image is not in visual_aid/
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
+    delete:
+      tags:
+      - display
+      summary: Blank the panel, immediately
+      operationId: delete_display_display_delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Delete Display Display Delete
+        '401':
+          description: Missing or wrong bearer token
+        '429':
+          description: Over LED_API_RATE_LIMIT writes per minute; see Retry-After
+      security:
+      - bearerAuth: []
+  /display/options:
+    get:
+      tags:
+      - display
+      summary: Kinds, fonts, images and colours a request can use
+      description: What a request can name — for the simulator's control form, and for humans.
+      operationId: get_options_display_options_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Get Options Display Options Get
+  /streams:
+    get:
+      tags:
+      - streams
+      summary: The Redis streams being consumed
+      operationId: get_streams_streams_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Get Streams Streams Get
+    post:
+      tags:
+      - streams
+      summary: Switch the consumed streams at runtime
+      description: |-
+        Replaces the whole set. Streams being added skip their backlog unless
+        `skipBacklog` is false. Not persisted: a restart returns to the environment.
+      operationId: post_streams_streams_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StreamsRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Post Streams Streams Post
+        '400':
+          description: Invalid stream list
+        '503':
+          description: Redis refused the switch
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /healthz:
+    get:
+      tags:
+      - health
+      summary: Liveness and build info
+      description: |-
+        Liveness and build info. 503 when the consumer failed or, in standalone mode,
+        the display worker stopped.
+      operationId: healthz_healthz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    DisplayRequest:
+      properties:
+        kind:
+          type: string
+          enum:
+          - static
+          - text
+          - ticker
+          - image
+          - gif
+          - score
+          title: Kind
+          description: Display mode. text scrolls once, ticker three times.
+          default: text
+        text:
+          type: string
+          title: Text
+          description: Required for static, text, ticker and score. Capped by LED_API_MAX_TEXT.
+          default: ''
+        image:
+          type: string
+          title: Image
+          description: 'Required for image and gif: a file name in visual_aid/, not a path.'
+          default: ''
+          examples:
+          - sunset.gif
+        font:
+          type: string
+          title: Font
+          description: A BDF file name in fonts/, not a path.
+          default: 6x10.bdf
+        color:
+          anyOf:
+          - prefixItems:
+            - type: integer
+            - type: integer
+            - type: integer
+            type: array
+            maxItems: 3
+            minItems: 3
+          - type: string
+          title: Color
+          description: An RGB triple, or a colour name from the profile (error, warning, success, info,
+            debug, …).
+          default:
+          - 255
+          - 255
+          - 255
+          examples:
+          - - 255
+            - 165
+            - 0
+          - warning
+        duration:
+          type: number
+          maximum: 600.0
+          exclusiveMinimum: 0.0
+          title: Duration
+          description: Seconds on the panel.
+          default: 5.0
+        hold:
+          type: boolean
+          title: Hold
+          description: Stay up until something replaces it. Honoured by static, image and score.
+          default: false
+      additionalProperties: false
+      type: object
+      title: DisplayRequest
+      description: Body of ``POST /display`` — a DisplayConfig without the rule-matching fields.
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    StreamsRequest:
+      properties:
+        streams:
+          items:
+            type: string
+          type: array
+          title: Streams
+        skipBacklog:
+          type: boolean
+          title: Skipbacklog
+          default: true
+      type: object
+      required:
+      - streams
+      title: StreamsRequest
+      description: Body of ``POST /streams``.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+  securitySchemes:
+    bearerAuth:
+      type: http
+      description: LED_API_TOKEN. Without it set, the write endpoints do not exist.
+      scheme: bearer

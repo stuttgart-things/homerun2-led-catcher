@@ -25,7 +25,8 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Callable, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from led_catcher.config.settings import ApiConfig
@@ -51,20 +52,48 @@ IMAGE_SUFFIXES = {".png", ".gif", ".jpg", ".jpeg", ".bmp", ".webp"}
 # What the simulator timeline shows as the source of an API display.
 API_SYSTEM = "api"
 
+# Declared as a scheme so the OpenAPI spec marks the write endpoints as
+# needing the token. auto_error=False: a missing or malformed header is
+# answered with this module's own 401, not FastAPI's 403.
+_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="bearerAuth",
+    description="LED_API_TOKEN. Without it set, the write endpoints do not exist.",
+)
+
+WRITE_RESPONSES: dict[int | str, dict] = {
+    401: {"description": "Missing or wrong bearer token"},
+    429: {"description": "Over LED_API_RATE_LIMIT writes per minute; see Retry-After"},
+}
+
 
 class DisplayRequest(BaseModel):
     """Body of ``POST /display`` — a DisplayConfig without the rule-matching fields."""
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Kind = "text"
-    text: str = ""
-    image: str = ""
-    font: str = "6x10.bdf"
+    kind: Kind = Field(default="text", description="Display mode. text scrolls once, ticker three times.")
+    text: str = Field(
+        default="",
+        description="Required for static, text, ticker and score. Capped by LED_API_MAX_TEXT.",
+    )
+    image: str = Field(
+        default="",
+        description="Required for image and gif: a file name in visual_aid/, not a path.",
+        examples=["sunset.gif"],
+    )
+    font: str = Field(default="6x10.bdf", description="A BDF file name in fonts/, not a path.")
     # An RGB triple, or the name of a profile colour ("error", "warning", …).
-    color: tuple[int, int, int] | str = (255, 255, 255)
-    duration: float = Field(default=5.0, gt=0, le=MAX_DURATION_SECONDS)
-    hold: bool = False
+    color: tuple[int, int, int] | str = Field(
+        default=(255, 255, 255),
+        description="An RGB triple, or a colour name from the profile (error, warning, success, info, debug, …).",
+        examples=[[255, 165, 0], "warning"],
+    )
+    duration: float = Field(default=5.0, gt=0, le=MAX_DURATION_SECONDS, description="Seconds on the panel.")
+    hold: bool = Field(
+        default=False,
+        description="Stay up until something replaces it. Honoured by static, image and score.",
+    )
 
     @field_validator("color")
     @classmethod
@@ -144,14 +173,14 @@ def create_display_router(
     palette = dict(DEFAULT_COLORS)
     palette.update(colors or {})
 
-    @router.get("/display")
+    @router.get("/display", summary="What is on the panel right now", tags=["display"])
     async def get_display() -> dict:
-        # Unauthenticated: it says nothing that is not already lit up in the room.
+        """Unauthenticated: it says nothing that is not already lit up in the room."""
         body = describe(worker.showing if worker is not None else None)
         body["writable"] = api.writable
         return body
 
-    @router.get("/display/options")
+    @router.get("/display/options", summary="Kinds, fonts, images and colours a request can use", tags=["display"])
     async def get_options() -> dict:
         """What a request can name — for the simulator's control form, and for humans."""
         return {
@@ -168,11 +197,11 @@ def create_display_router(
         logger.info("LED_API_TOKEN not set — POST/DELETE /display are not registered")
         return router
 
-    expected = f"Bearer {api.token}".encode()
+    expected = api.token.encode()
     limiter = RateLimiter(api.rate_limit, clock=clock)
 
-    def authorize(request: Request) -> None:
-        given = request.headers.get("authorization", "").encode()
+    def authorize(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> None:
+        given = credentials.credentials.encode() if credentials is not None else b""
         if not secrets.compare_digest(given, expected):
             raise HTTPException(status_code=401, detail="missing or wrong bearer token")
         retry_after = limiter.acquire()
@@ -183,8 +212,20 @@ def create_display_router(
                 headers={"Retry-After": str(max(1, int(retry_after + 0.999)))},
             )
 
-    @router.post("/display", dependencies=[Depends(authorize)])
+    @router.post(
+        "/display",
+        dependencies=[Depends(authorize)],
+        summary="Put something on the panel",
+        tags=["display"],
+        responses={
+            **WRITE_RESPONSES,
+            400: {"description": "The kind is missing what it draws, text too long, or an unknown colour name"},
+            404: {"description": "The image is not in visual_aid/"},
+        },
+    )
     async def post_display(body: DisplayRequest) -> dict:
+        """Shown like a matched message: a held display gives way at once, a finite
+        one keeps its full duration, and the newest waiting display wins."""
         config = _to_config(body, palette, api.max_text)
         logger.info(
             "displaying from API: kind=%s hold=%s",
@@ -198,7 +239,13 @@ def create_display_router(
             _record(tracker, config)
         return {"accepted": True, "panel": worker is not None, "display": describe_config(config)}
 
-    @router.delete("/display", dependencies=[Depends(authorize)])
+    @router.delete(
+        "/display",
+        dependencies=[Depends(authorize)],
+        summary="Blank the panel, immediately",
+        tags=["display"],
+        responses=WRITE_RESPONSES,
+    )
     async def delete_display() -> dict:
         logger.info("blanking the panel from API", extra={"system": API_SYSTEM})
         if worker is not None:

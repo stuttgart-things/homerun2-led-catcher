@@ -126,6 +126,13 @@ What is on the panel right now:
 }
 ```
 
+## OpenAPI
+
+The API is described in [`docs/openapi.yaml`](https://github.com/stuttgart-things/homerun2-led-catcher/blob/main/docs/openapi.yaml),
+generated from the routers (`task openapi`). Backstage shows it as the API
+`homerun2-led-catcher-api`. The running service keeps `/openapi.json` switched off,
+so nothing extra is exposed on the panel's port.
+
 ## `GET /display/options`
 
 The kinds, fonts, images and named colours a request can use, plus the limits.

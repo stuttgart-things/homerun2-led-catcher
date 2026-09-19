@@ -25,7 +25,7 @@ def create_control_router(consumer: RedisConsumer) -> APIRouter:
     """Build the ``/streams`` router bound to a running consumer."""
     router = APIRouter()
 
-    @router.get("/streams")
+    @router.get("/streams", summary="The Redis streams being consumed", tags=["streams"])
     async def get_streams() -> dict:
         return {
             "streams": consumer.streams,
@@ -33,8 +33,15 @@ def create_control_router(consumer: RedisConsumer) -> APIRouter:
             "consumerName": consumer.consumer_name,
         }
 
-    @router.post("/streams")
+    @router.post(
+        "/streams",
+        summary="Switch the consumed streams at runtime",
+        tags=["streams"],
+        responses={400: {"description": "Invalid stream list"}, 503: {"description": "Redis refused the switch"}},
+    )
     async def post_streams(body: StreamsRequest) -> dict:
+        """Replaces the whole set. Streams being added skip their backlog unless
+        `skipBacklog` is false. Not persisted: a restart returns to the environment."""
         try:
             return await consumer.set_streams(body.streams, skip_backlog=body.skip_backlog)
         except ValueError as exc:

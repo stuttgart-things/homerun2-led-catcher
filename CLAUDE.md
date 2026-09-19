@@ -90,6 +90,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/handlers/health.py` — FastAPI health endpoint
 - `src/led_catcher/handlers/control.py` — `GET`/`POST /streams` runtime stream switching
 - `src/led_catcher/handlers/display_api.py` — `GET`/`POST`/`DELETE /display`: token auth, text cap, rate limit
+- `src/led_catcher/openapi.py` — generates `docs/openapi.yaml` (`task openapi`); the API entity in `catalog-info.yaml` points at it, and `tests/test_openapi.py` fails when it is stale
 - `src/led_catcher/display/worker.py` — display worker thread: newest wins, `blank()`, `showing`
 - `src/led_catcher/web/app.py` — simulator routes, `/ui/streams` control partial, SSE generator
 - `src/led_catcher/web/preview.py` — `/api/preview/*`: BDF glyphs and prepared frames, so the canvas draws what the panel draws

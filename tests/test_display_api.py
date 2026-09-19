@@ -84,6 +84,17 @@ async def test_a_write_without_the_right_token_is_refused(headers):
     assert worker.submitted == [] and worker.blanks == 0
 
 
+async def test_the_bearer_scheme_is_case_insensitive():
+    # RFC 7235: the auth scheme is case-insensitive; the token itself is not.
+    worker = FakeWorker()
+    async with client(make_app(worker)) as c:
+        lower = await c.delete("/display", headers={"Authorization": f"bearer {TOKEN}"})
+        wrong_case_token = await c.delete("/display", headers={"Authorization": f"Bearer {TOKEN.upper()}"})
+
+    assert lower.status_code == 200
+    assert wrong_case_token.status_code == 401
+
+
 # ---- the happy path ------------------------------------------------------------
 
 
