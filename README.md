@@ -43,39 +43,39 @@ The health endpoint is available at `http://localhost:8080/healthz`.
 - Raspberry Pi (3B+ or newer recommended)
 - 64x64 RGB LED Matrix panel
 - Adafruit RGB Matrix HAT or Bonnet
-- Raspberry Pi OS Bookworm Lite (64-bit) — ships Python 3.11
+- Raspberry Pi OS Lite (64-bit): Trixie (Python 3.13) or Bookworm (Python 3.11)
 - Python 3.11+ (Bullseye's 3.9 is too old)
 
-### Build rpi-rgb-led-matrix
+### Install
 
 ```bash
-git clone https://github.com/hzeller/rpi-rgb-led-matrix.git
-cd rpi-rgb-led-matrix
+# system packages, and the audio driver off (it shares the PWM hardware with the matrix)
+sudo apt-get install -y git make g++ cmake python3-dev python3-venv python3-pil
+echo "blacklist snd_bcm2835" | sudo tee /etc/modprobe.d/blacklist-rgb-matrix.conf
+sudo update-initramfs -u && sudo reboot
 
-# Configure for Adafruit HAT with PWM
-sed -i 's/^HARDWARE_DESC?=regular/#HARDWARE_DESC?=regular/; s/^#HARDWARE_DESC=adafruit-hat-pwm/HARDWARE_DESC=adafruit-hat-pwm/' lib/Makefile
-
-# Build and install Python bindings
-cd bindings/python
-make build-python && sudo make install-python
+# after the reboot: one venv with the matrix library and the catcher
+git clone https://github.com/stuttgart-things/homerun2-led-catcher.git ~/homerun2-led-catcher
+cd ~/homerun2-led-catcher
+python3 -m venv --system-site-packages .venv   # uses Debian's Pillow, see below
+git clone --depth 1 https://github.com/hzeller/rpi-rgb-led-matrix.git ~/lib/rpi-rgb-led-matrix
+.venv/bin/pip install ~/lib/rpi-rgb-led-matrix
+.venv/bin/pip install -e .
 ```
 
-### Disable audio driver (interferes with LED matrix)
-
-```bash
-echo "snd_bcm2835" | sudo tee /etc/modprobe.d/blacklist-rgb-matrix.conf
-sudo update-initramfs -u
-sudo reboot
-```
+The matrix library builds its Python bindings with `pip`, straight into the venv.
+It compiles against Pillow's C header, which comes from Debian's `python3-pil`. The
+venv therefore uses that same Pillow (`--system-site-packages`): a different
+Pillow version at runtime makes `image` and `gif` displays read the wrong memory. The `adafruit-hat`/`adafruit-hat-pwm` wiring is
+picked at runtime with `LED_HARDWARE_MAPPING`, not at build time.
+After init the library drops root and runs as `daemon`: if `stat -c %a ~` prints
+`700`, run `chmod 711 ~` so it can still read `fonts/` and `visual_aid/`.
 
 ### Run on Pi
 
-The `rgbmatrix` bindings install into the system Python, so the venv needs
-`--system-site-packages` to see them:
-
 ```bash
-python3 -m venv --system-site-packages .venv
-.venv/bin/pip install -e .
+# Panel check without Redis, driven by curl (see docs/testing-with-curl.md)
+sudo LED_MODE=standalone LED_API_TOKEN=change-me .venv/bin/python -m led_catcher
 
 # With hardware LED matrix
 sudo LED_MODE=led REDIS_ADDR=<redis-host> PROFILE_PATH=$PWD/profile.yaml .venv/bin/python -m led_catcher

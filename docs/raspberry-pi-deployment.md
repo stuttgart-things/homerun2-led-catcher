@@ -25,19 +25,68 @@ there under Docker.
 | Panel | 64x64 RGB LED matrix, HUB75 |
 | HAT | Adafruit RGB Matrix HAT or Bonnet |
 | Power | 5V 4A for the panel (separate from the Pi supply) |
-| OS | **Raspberry Pi OS Bookworm Lite (64-bit)** |
+| OS | **Raspberry Pi OS Lite (64-bit)**: Trixie (Python 3.13) or Bookworm (Python 3.11) |
 | Python | 3.11+ |
 | Redis | reachable redis-stack instance (RedisJSON required) |
 
-!!! warning "Bookworm, not Bullseye"
-    Earlier docs recommended Raspberry Pi OS Legacy (Bullseye), which ships
-    Python 3.9. This project requires **Python 3.11+** (`pyproject.toml`), so
-    Bullseye cannot run it without building Python from source. Bookworm ships
-    3.11 and is the supported baseline.
+!!! warning "Trixie or Bookworm, not Bullseye"
+    The Raspberry Pi Imager now installs **Trixie** (Debian 13, Python 3.13) as
+    "Raspberry Pi OS Lite (64-bit)". Bookworm (Python 3.11) is under
+    "Raspberry Pi OS (Legacy)". Both work: CI tests 3.11 and 3.14.
+    **Bullseye** ships Python 3.9 and cannot run this project, which requires
+    Python 3.11+.
+
+## 0. Write the SD card
+
+Use the [Raspberry Pi Imager](https://www.raspberrypi.com/software/)
+(macOS: `brew install --cask raspberry-pi-imager`).
+
+1. **Device:** your Pi model. **OS:** *Raspberry Pi OS (other)* → **Raspberry Pi OS Lite (64-bit)**.
+   **Storage:** the SD card. Check it is not an external disk.
+2. **Edit settings:** hostname, user and password, Wi-Fi if needed, time zone
+   and keyboard. Under **Services**, enable **SSH**, preferably with your public key.
+3. **Write.**
+
+Before ejecting, edit the boot partition. It mounts as `bootfs` (macOS:
+`/Volumes/bootfs`). It is the only partition macOS can write; the system itself
+is ext4.
+
+```bash
+cd /Volumes/bootfs
+
+# The onboard audio shares the PWM hardware with the matrix. config.txt already
+# has dtparam=audio=on; switch it off instead of adding a second line.
+sed -i '' 's/^dtparam=audio=on$/dtparam=audio=off/' config.txt
+grep -n audio config.txt
+
+# Optional, recommended by rpi-rgb-led-matrix on 4-core boards: keep one core
+# for the matrix. cmdline.txt must stay ONE line, so append to it.
+sed -i '' 's/$/ isolcpus=3/' cmdline.txt
+cat cmdline.txt
+
+cd ~ && diskutil eject /Volumes/bootfs
+```
+
+On Linux, drop the `''` after `sed -i` and eject with `umount`. The zsh in the macOS
+Terminal does not treat `#` as a comment on the command line, so paste the
+commands without trailing comments.
+
+`dtparam=audio=off` alone did **not** unload `snd_bcm2835` on a Pi with Trixie;
+the blacklist in the next step is what does. Keep both.
+
+First boot takes 2–3 minutes: cloud-init creates the user, sets up SSH and
+Wi-Fi, and the filesystem is resized. Then log in and check:
+
+```bash
+ssh <user>@<hostname>.local
+grep -E 'PRETTY_NAME|VERSION_CODENAME' /etc/os-release
+python3 --version
+grep -o 'isolcpus=3' /proc/cmdline
+```
 
 ## 1. Prepare the Pi
 
-Ansible play for a fresh Bookworm image:
+Ansible play for a fresh Trixie or Bookworm image:
 
 ```yaml
 # /tmp/raspi-betankung.yaml
@@ -55,7 +104,8 @@ Ansible play for a fresh Bookworm image:
       - python3-pip
       - python3-dev
       - python3-venv
-      - cython3
+      - python3-pil
+      - cmake
 
   tasks:
     - name: Update apt cache
@@ -69,7 +119,8 @@ Ansible play for a fresh Bookworm image:
 
     - name: Blacklist the onboard audio driver
       ansible.builtin.copy:
-        content: "snd_bcm2835\n"
+        # "blacklist" is required: a bare module name is ignored by modprobe.d
+        content: "blacklist snd_bcm2835\n"
         dest: /etc/modprobe.d/blacklist-rgb-matrix.conf
         mode: "0644"
       notify: update initramfs
@@ -83,66 +134,100 @@ Ansible play for a fresh Bookworm image:
 ansible-playbook -i /tmp/inventory_raspi /tmp/raspi-betankung.yaml -vv
 ```
 
-`python3-venv` is new compared to the old play: Bookworm marks the system Python
-as externally managed (PEP 668), so `pip install` into it is refused. Everything
-below uses a venv.
-
-The audio driver shares the GPIO/PWM hardware with the matrix — leaving it loaded
-causes flicker. **Reboot after this play** so the blacklist takes effect.
-
-## 2. Build the matrix library
+Without Ansible, the same by hand:
 
 ```bash
-mkdir -p ~/lib && cd ~/lib
-git clone https://github.com/hzeller/rpi-rgb-led-matrix.git
-cd rpi-rgb-led-matrix
-
-# Adafruit HAT with the PWM mod — better refresh, far less flicker.
-# Skip this if you did NOT solder the GPIO4↔GPIO18 bridge.
-sed -i 's/^HARDWARE_DESC?=regular/#HARDWARE_DESC?=regular/; s/^#HARDWARE_DESC=adafruit-hat-pwm/HARDWARE_DESC=adafruit-hat-pwm/' lib/Makefile
-
-cd bindings/python
-make build-python
-sudo make install-python
+sudo apt-get update
+sudo apt-get install -y git curl make g++ cmake python3-pip python3-dev python3-venv python3-pil
+echo "blacklist snd_bcm2835" | sudo tee /etc/modprobe.d/blacklist-rgb-matrix.conf
+sudo update-initramfs -u
+sudo reboot
 ```
 
-`make install-python` installs `rgbmatrix` into the **system** Python. The venv in
-the next step is created with `--system-site-packages` so it can see it.
-
-Verify:
+The audio driver shares the GPIO/PWM hardware with the matrix. Left loaded, it
+causes flicker, and rpi-rgb-led-matrix refuses to start. **Reboot** so the
+blacklist takes effect, then check:
 
 ```bash
-python3 -c "import rgbmatrix; print('rgbmatrix ok')"
+lsmod | grep snd_bcm2835 || echo "audio off"
 ```
 
-## 3. Install the catcher
+Trixie and Bookworm mark the system Python as externally managed (PEP 668), so
+`pip install` into it is refused. Everything below uses a venv.
+
+**Home directory permissions.** Once the panel is up, rpi-rgb-led-matrix drops
+root and continues as the user `daemon` (`drop_privileges=True`). That user must
+be able to reach `fonts/`, `visual_aid/` and the code in your checkout. Newer
+Debian releases create home directories with mode `0700`, which locks it out:
+
+```bash
+stat -c '%a %n' ~        # 700 means daemon cannot get in
+chmod 711 ~              # lets others pass through, not list
+```
+
+## 2. Install the catcher and the matrix library
+
+Both go into one venv in the checkout. `rpi-rgb-led-matrix` builds its Python
+bindings with `pip` (scikit-build-core and CMake), so there is no system-wide
+install.
+
+The venv is created with `--system-site-packages` for one reason: **Pillow**. The
+matrix library compiles a small shim against Pillow's C header `Imaging.h`, which
+comes from Debian's `python3-pil`. At runtime `SetImage()`, which the `image` and
+`gif` modes use, reads Pillow's image struct through that shim. Pillow 12 changed
+that struct, so the Pillow the venv runs must be the one the header came from.
+With `--system-site-packages`, pip sees Debian's Pillow (11.1 on Trixie), which
+already satisfies `pillow>=11.0`, and leaves it alone.
 
 ```bash
 cd ~
 git clone https://github.com/stuttgart-things/homerun2-led-catcher.git
 cd homerun2-led-catcher
+git checkout v0.10.0        # or stay on main; see the releases page for the latest
 
 python3 -m venv --system-site-packages .venv
 .venv/bin/pip install --upgrade pip
+
+# the matrix library, into the same venv (the build takes a few minutes on a Pi)
+mkdir -p ~/lib
+git clone --depth 1 https://github.com/hzeller/rpi-rgb-led-matrix.git ~/lib/rpi-rgb-led-matrix
+.venv/bin/pip install ~/lib/rpi-rgb-led-matrix
+
+# the catcher itself
 .venv/bin/pip install -e .
 ```
 
-Two details that matter:
+Notes:
 
-- **`--system-site-packages`** — without it the venv cannot see `rgbmatrix` and the
-  app silently starts in software-only mode (log line
-  `rgbmatrix not available — running in software-only mode`).
-- **`-e` (editable)** — keeps `fonts/` and `visual_aid/` resolvable next to the
-  code. For a non-editable install, set `FONTS_DIR` and `VISUAL_AID_DIR` explicitly.
+- **No build-time hardware choice.** Older guides edited `HARDWARE_DESC` in
+  `lib/Makefile` for the Adafruit HAT with the PWM mod. The CMake build doesn't read
+  that file, and it isn't needed: every mapping (`adafruit-hat`, `adafruit-hat-pwm`,
+  …) is compiled in, and the catcher picks one at runtime from
+  `LED_HARDWARE_MAPPING` (see [Panel options](#3b-panel-options)).
+- **`-e` (editable)** keeps `fonts/` and `visual_aid/` resolvable next to the
+  code. For a non-editable install, set `FONTS_DIR` and `VISUAL_AID_DIR`
+  explicitly.
+- **Never `pip install --upgrade pillow`** in this venv. If the upstream build
+  fails with `fatal error: Imaging.h: No such file or directory`, `python3-pil` is
+  missing.
+- Updating later: `git pull` in both checkouts, then run the two `pip install`
+  lines again.
 
 Confirm the hardware path is active:
 
 ```bash
+.venv/bin/python -c "import rgbmatrix; print('rgbmatrix ok')"
 .venv/bin/python -c "from led_catcher.display.matrix import HAS_RGBMATRIX; print(HAS_RGBMATRIX)"
 # True
+.venv/bin/python -c "import PIL; print(PIL.__version__, PIL.__file__)"
+# 11.1.0 /usr/lib/python3/dist-packages/PIL/__init__.py   <- Debian's, not .venv/
 ```
 
-## 4. Fonts and images
+`False` means the venv cannot import `rgbmatrix`. The app then starts in
+software-only mode (log line `rgbmatrix not available — running in software-only
+mode`): everything works, and the panel stays dark.
+
+## 3. Fonts and images
 
 The repo ships three public-domain BDF fonts in `fonts/` (`4x6`, `6x10`, `7x13`),
 so text rendering works out of the box. Only BDF is supported — `LoadFont()` cannot
@@ -173,7 +258,7 @@ Lookup order is `$FONTS_DIR` → repo root → package dir → `/app/fonts` → 
 an absolute path. A rule referencing a missing font logs a warning and falls back
 to `LED_DEFAULT_FONT` instead of killing the process.
 
-## 4b. Panel options
+## 3b. Panel options
 
 The panel is described by environment variables, not by the source. Defaults are
 what the code used to hardcode, so an existing deployment that sets none of these
@@ -181,7 +266,7 @@ behaves exactly as before.
 
 | Variable | Default | Maps to | Notes |
 |----------|---------|---------|-------|
-| `LED_HARDWARE_MAPPING` | `adafruit-hat` | `hardware_mapping` | `adafruit-hat-pwm` only exists when the PWM mod is soldered *and* the library was built with `HARDWARE_DESC=adafruit-hat-pwm` |
+| `LED_HARDWARE_MAPPING` | `adafruit-hat` | `hardware_mapping` | `adafruit-hat-pwm` if the GPIO4↔GPIO18 bridge (PWM mod) is soldered; every mapping is compiled into the library |
 | `LED_GPIO_SLOWDOWN` | *(library default)* | `gpio_slowdown` | Raise it if the panel ghosts, flickers or shows garbage. `2` is verified on a Pi 3B+ |
 | `LED_BRIGHTNESS` | `100` | `brightness` | 1–100 |
 | `LED_ROWS` / `LED_COLS` | `64` | `rows` / `cols` | |
@@ -233,6 +318,20 @@ panel, otherwise a burst of messages queues up behind the current one.
 
 ## 6. First manual run
 
+Check the panel first without Redis: `standalone` mode drives it from the
+`/display` API only.
+
+```bash
+sudo LED_MODE=standalone LED_API_TOKEN=change-me LED_GPIO_SLOWDOWN=2 \
+     LOG_FORMAT=text .venv/bin/python -m led_catcher
+```
+
+From another machine, follow [Testing with curl](testing-with-curl.md) against
+`http://<pi>:8080` (the walkthrough in section 5 shows every mode), and open the
+same address in a browser: the simulator shows what the panel should show.
+
+Then with Redis, as it will run for real:
+
 ```bash
 sudo LED_MODE=led \
      REDIS_ADDR=<redis-host> \
@@ -254,7 +353,7 @@ consumer starting
 ```
 
 If the panel stays dark, ghosts or shows garbage, this is the first thing to
-change — see [Panel options](#4b-panel-options):
+change — see [Panel options](#3b-panel-options):
 
 ```bash
 sudo LED_MODE=led LED_GPIO_SLOWDOWN=2 LED_HARDWARE_MAPPING=adafruit-hat-pwm \
@@ -397,11 +496,14 @@ A growing `pending` count means handlers are slower than the inflow — usually 
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `rgbmatrix not available — running in software-only mode` | venv cannot see the bindings | recreate the venv with `--system-site-packages`, or rerun `sudo make install-python` |
+| `rgbmatrix not available — running in software-only mode` | the venv has no `rgbmatrix` | `.venv/bin/pip install ~/lib/rpi-rgb-led-matrix`, and run the app with `.venv/bin/python`, not the system `python3` |
+| Startup fails, message about `snd_bcm2835` / the sound module | onboard audio still loaded | `blacklist snd_bcm2835` (with the word `blacklist`) in `/etc/modprobe.d/blacklist-rgb-matrix.conf`, `sudo update-initramfs -u`, reboot |
+| `image`/`gif` show garbage, or the process crashes on the first image | the venv runs a different Pillow than the header `rgbmatrix` was built against | `PIL.__file__` must be under `/usr/lib/python3/dist-packages`; `.venv/bin/pip uninstall pillow`, so the venv falls back to Debian's |
+| Panel works, then `Permission denied` on fonts, images or modules | after init the library runs as `daemon`, which cannot enter a `0700` home | `chmod 711 ~` (see [Prepare the Pi](#1-prepare-the-pi)) |
 | Panel stays dark, no errors | messages match no profile rule | `LOG_LEVEL=debug` shows `no matching display rule`; add a `systems: ["*"]` catch-all |
 | Text missing, `font ... not found` warning | font not in any search dir | `task fetch-fonts`, or set `FONTS_DIR` |
 | Process exits immediately at startup | `LoadFont()` on a missing path, or no GPIO permission | run with `sudo`, check the font warning above it |
-| Heavy flicker | audio driver still loaded, or no PWM mod | verify the blacklist and that you rebooted; rebuild without `adafruit-hat-pwm` if the bridge is not soldered |
+| Heavy flicker | audio driver still loaded, or no PWM mod | `lsmod \| grep snd_bcm2835` must be empty; use `LED_HARDWARE_MAPPING=adafruit-hat` if the bridge is not soldered |
 | Ghosting, garbled rows, wrong colours | GPIO too fast for this panel | raise `LED_GPIO_SLOWDOWN` (`2` on a Pi 3B+), or set `LED_PANEL_TYPE=FM6126A` if the panel needs that init sequence |
 | Process aborts inside `RGBMatrix()` | unknown `hardware_mapping` | the `initializing RGB LED matrix` line above it names the value that was handed over |
 | Scoreboard runs off the panel | `score` is laid out for 64x64 only | keep `LED_ROWS`/`LED_COLS` at 64 for that mode — the warning names the size it got |
@@ -413,7 +515,14 @@ A growing `pending` count means handlers are slower than the inflow — usually 
 
 ```bash
 cd ~/homerun2-led-catcher
-git pull
+git pull                      # or: git fetch --tags && git checkout <new tag>
 .venv/bin/pip install -e .
 sudo systemctl restart led-catcher
+```
+
+The matrix library changes rarely. To update it too:
+
+```bash
+git -C ~/lib/rpi-rgb-led-matrix pull
+~/homerun2-led-catcher/.venv/bin/pip install ~/lib/rpi-rgb-led-matrix
 ```
