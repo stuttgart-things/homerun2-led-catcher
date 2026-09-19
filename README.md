@@ -86,7 +86,7 @@ sudo LED_MODE=full REDIS_ADDR=<redis-host> PROFILE_PATH=$PWD/profile.yaml .venv/
 
 **As a service, or all of it in one go:** the systemd units (standalone and with
 Redis) and an Ansible play that does the whole Pi base install are in
-[docs/raspberry-pi-deployment.md](docs/raspberry-pi-deployment.md#7-run-as-a-service).
+[docs/raspberry-pi-service.md](docs/raspberry-pi-service.md).
 
 > **Note:** `sudo` is required for GPIO access. `rpi-rgb-led-matrix` drops
 > privileges again after initialising the panel.

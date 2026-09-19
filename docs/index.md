@@ -2,7 +2,7 @@
 
 RGB LED matrix catcher for the [homerun2](https://github.com/stuttgart-things) ecosystem.
 
-Consumes messages from Redis Streams and displays them on a 64x64 RGB LED matrix with an embedded HTMX web simulator for development and demos.
+Shows homerun2 notifications from Redis Streams on a 64x64 RGB LED matrix. The panel can also be driven directly over HTTP, and an embedded web simulator draws what the panel draws.
 
 ## Features
 
@@ -23,6 +23,20 @@ LED_MODE=web LOG_FORMAT=text python -m led_catcher
 ```
 
 Open [http://localhost:8080](http://localhost:8080) for the web simulator.
+Without Redis: `task run-standalone`, then [Testing with curl](testing-with-curl.md).
+
+## Where to go
+
+| I want to… | Page |
+|---|---|
+| understand how it fits together | [Architecture](architecture.md) |
+| put something on the panel right now | [Testing with curl](testing-with-curl.md) |
+| set up a Raspberry Pi with a panel | [Hardware Setup](hardware-setup.md), then [Install](raspberry-pi-deployment.md) |
+| run it as a service, or install with Ansible | [Run as a service](raspberry-pi-service.md) |
+| test, troubleshoot or update a Pi | [Operations](raspberry-pi-operations.md) |
+| look up the HTTP API or the profile format | [Display API](display-api.md), [Profile Reference](profile-reference.md) |
+| deploy to Kubernetes | [Kubernetes](deployment.md) |
+| work on the code | [Development](development.md) |
 
 ## Related Services
 

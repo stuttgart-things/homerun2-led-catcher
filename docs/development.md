@@ -26,6 +26,15 @@ LED_MODE=web LOG_FORMAT=text REDIS_ADDR=localhost python -m led_catcher
 The web simulator is available at `http://localhost:8080`.
 Health endpoint at `http://localhost:8080/healthz`.
 
+### Without Redis (standalone)
+
+```bash
+task run-standalone     # LED_MODE=standalone, LED_API_TOKEN=dev
+```
+
+Drive the simulator with the `/display` API, see [Testing with curl](testing-with-curl.md),
+or with the Panel control form under the canvas.
+
 ### With Redis (port-forward)
 
 ```bash
@@ -81,29 +90,37 @@ task pages-local       # mkdocs build
 
 ```
 src/led_catcher/
-├── __init__.py
-├── __main__.py          # Entry point, handler composition
+├── __main__.py            # entry point: mode, handlers, app, lifecycle
 ├── config/
-│   └── settings.py      # Env vars, logging setup
+│   └── settings.py        # Config, PanelConfig, ApiConfig from env; logging
 ├── consumer/
-│   └── redis_consumer.py # Redis Streams consumer
+│   └── redis_consumer.py  # consumer groups, JSON.GET, startup retry, stream switching
 ├── handlers/
-│   ├── health.py        # /healthz endpoint
-│   ├── log_handler.py   # Structured logging
-│   └── led_handler.py   # LED display handler
+│   ├── health.py          # /healthz, /health
+│   ├── control.py         # GET/POST /streams
+│   ├── display_api.py     # GET/POST/DELETE /display, /display/options
+│   ├── log_handler.py     # structured logging
+│   └── led_handler.py     # profile rule → display worker
 ├── models/
-│   └── message.py       # Message + CaughtMessage
+│   └── message.py         # Message + CaughtMessage
 ├── profile/
-│   └── engine.py        # YAML rules, Jinja2
+│   └── engine.py          # YAML rules, Jinja2, severity colours
 ├── display/
-│   ├── matrix.py        # rpi-rgb-led-matrix wrapper
-│   └── modes.py         # static, scroll, ticker, image, gif
-└── web/
-    ├── app.py           # FastAPI HTMX app
-    ├── events.py        # EventTracker ring buffer
-    ├── handler.py       # Web event recorder
-    └── templates/
-        └── index.html   # HTMX simulator UI
+│   ├── worker.py          # the thread that owns the panel, newest wins
+│   ├── modes.py           # static, text, ticker, image, gif, score; asset lookup
+│   ├── matrix.py          # rpi-rgb-led-matrix wrapper (no-op without it)
+│   ├── bdf.py             # BDF font metrics and glyph bitmaps
+│   ├── frames.py          # image/GIF frames prepared once per file
+│   └── score.py           # table-tennis scoreboard
+├── web/
+│   ├── app.py             # FastAPI HTMX simulator, SSE, /ui/streams
+│   ├── events.py          # EventTracker ring buffer
+│   ├── handler.py         # web_handler: messages → events
+│   ├── preview.py         # /api/preview/*: glyphs and frames for the canvas
+│   └── templates/
+│       └── index.html     # simulator UI, canvas renderer, Panel control
+└── tools/
+    └── publish.py         # led-catcher-publish test producer
 ```
 
 ## Git Workflow
