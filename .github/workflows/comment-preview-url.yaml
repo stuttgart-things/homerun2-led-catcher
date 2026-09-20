@@ -24,5 +24,8 @@ jobs:
     with:
       hostname-prefix: led-pr
       hostname-domain: homerun2-dev.sthings-vsphere.labul.sva.de
+      # /healthz, not the template's /health default: this component serves
+      # /healthz and nothing at /health, so the default links to a 404.
+      health-path: /healthz
       namespace-prefix: homerun2-led-catcher-pr
     secrets: inherit # pragma: allowlist secret
