@@ -238,3 +238,22 @@ async def test_the_ui_page_is_not_cached():
 
     assert response.status_code == 200
     assert response.headers.get("cache-control") == "no-store"
+
+
+async def test_the_page_opens_one_event_stream():
+    """Every SSE consumer on the page shares one connection (#106).
+
+    Three sse-connect attributes and a hand-made EventSource made four
+    connections per tab, each rendering the same timeline; two tabs went past
+    the browser's ~6 connections per host.
+    """
+    app = create_web_app(EventTracker(), version="test", commit="c", date="d")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        page = (await client.get("/")).text
+
+    assert page.count("sse-connect=") == 1
+    assert "new EventSource(" not in page
+    for event in ("stats-update", "streams-update", "events-update"):
+        assert f'sse-swap="{event}"' in page, f"nothing swaps {event} any more"
+    assert "htmx:sseMessage" in page, "the canvas no longer hears about new events"

@@ -422,7 +422,8 @@
         ::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
     </style>
 </head>
-<body>
+<!-- One event stream per tab: every sse-swap below and the canvas share it (#106). -->
+<body hx-ext="sse" sse-connect="/api/events/stream">
     <div class="header">
         <div>
             <div class="header-title">HOMERUN<sup>2</sup></div>
@@ -431,16 +432,12 @@
         <div class="header-stats">
             <div class="stat-badge">
                 Events: <strong id="stats-count"
-                    hx-ext="sse"
-                    sse-connect="/api/events/stream"
                     sse-swap="stats-update"
                     hx-swap="innerHTML">{{ total_events }}</strong>
             </div>
             <div class="stat-badge">Mode: <strong>{{ mode }}</strong></div>
             <div class="stat-badge stream-badge"
                  id="streams-control"
-                 hx-ext="sse"
-                 sse-connect="/api/events/stream"
                  sse-swap="streams-update"
                  hx-swap="innerHTML">{{ streams_control }}</div>
         </div>
@@ -462,8 +459,6 @@
             </div>
             <div class="events-list"
                  id="events-list"
-                 hx-ext="sse"
-                 sse-connect="/api/events/stream"
                  sse-swap="events-update"
                  hx-swap="innerHTML">
                 {{ events_content }}
@@ -1033,8 +1028,11 @@
         clearMatrix();
         resync(true);
 
-        const eventsSource = new EventSource('/api/events/stream');
-        eventsSource.addEventListener('events-update', () => resync(false));
+        // Rides on the page's one event stream: htmx-ext-sse fires
+        // htmx:sseMessage on #events-list after each events-update swap. A
+        // separate EventSource here was a fourth connection per tab (#106).
+        document.getElementById('events-list')
+            .addEventListener('htmx:sseMessage', () => resync(false));
 
         // ---- Panel control ------------------------------------------------
         // A client of the public /display API, not a private path: anything
