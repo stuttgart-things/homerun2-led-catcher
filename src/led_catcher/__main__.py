@@ -205,7 +205,7 @@ async def _run(cfg: Config) -> int:
     stop = asyncio.Event()
     _install_signal_handlers(stop)
 
-    profile = load_profile(cfg.profile_path)
+    profile = load_profile(cfg.profile_path, rules_expected=not standalone)
     consumer: RedisConsumer | None = None
     if standalone:
         # No Redis, no consumer, no rule matching: the /display API is the
