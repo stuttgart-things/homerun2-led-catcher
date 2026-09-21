@@ -18,6 +18,23 @@ def test_load_profile():
     assert profile.colors["error"] == (255, 0, 0)
 
 
+def test_a_missing_profile_warns_where_rules_are_expected(caplog):
+    load_profile("/nonexistent/profile.yaml")
+
+    assert [r.levelname for r in caplog.records] == ["WARNING"]
+    assert "profile not found at /nonexistent/profile.yaml" in caplog.text
+
+
+def test_a_missing_profile_is_only_a_notice_in_standalone(caplog):
+    # Standalone matches no rules; on the Pi the warning came at every boot (#107).
+    caplog.set_level("INFO")
+    profile = load_profile("/nonexistent/profile.yaml", rules_expected=False)
+
+    assert [r.levelname for r in caplog.records] == ["INFO"]
+    assert "no profile at /nonexistent/profile.yaml, using the default colours" in caplog.text
+    assert profile.colors == Profile().colors
+
+
 def test_load_profile_missing_file():
     profile = load_profile("/nonexistent/profile.yaml")
     assert len(profile.rules) == 0

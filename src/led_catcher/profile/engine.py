@@ -64,11 +64,19 @@ class Profile:
         self.colors = merged
 
 
-def load_profile(path: str | Path) -> Profile:
-    """Load a display profile from a YAML file."""
+def load_profile(path: str | Path, rules_expected: bool = True) -> Profile:
+    """Load a display profile from a YAML file.
+
+    A missing file is a warning where messages are matched against rules, and
+    only a notice where nothing is (standalone): there the profile supplies
+    nothing but colour names, and the built-in ones are the normal case (#107).
+    """
     path = Path(path)
     if not path.exists():
-        logger.warning("profile not found at %s, using empty profile", path)
+        if rules_expected:
+            logger.warning("profile not found at %s, using empty profile", path)
+        else:
+            logger.info("no profile at %s, using the default colours", path)
         return Profile()
 
     with open(path) as f:
