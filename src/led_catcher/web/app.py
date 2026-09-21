@@ -232,6 +232,11 @@ CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocompl
         <button type="submit">Show</button>
         <button type="button" class="secondary" id="pc-blank">Blank</button>
     </div>
+    <label for="pc-idle">Idle screen</label>
+    <div class="row-inline">
+        <select id="pc-idle"></select>
+        <button type="button" class="secondary" id="pc-idle-set">Set</button>
+    </div>
     <div class="status" id="pc-status"></div>
 </form>"""
 

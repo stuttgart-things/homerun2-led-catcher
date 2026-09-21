@@ -162,6 +162,8 @@ All configuration is via environment variables:
 | `LED_COLS` | `64` | Panel columns |
 | `LED_PANEL_TYPE` | *(empty)* | Panel driver chip needing an init sequence, e.g. `FM6126A` |
 | `LED_PWM_BITS` | *(library default)* | PWM bits, 1–11. Lower trades colour depth for refresh rate |
+| `LED_IDLE` | `off` | Idle screen: `clock` shows the time whenever nothing else is on the panel, `off` leaves it dark. Switchable at runtime with `PUT /display/idle` |
+| `LED_IDLE_COLOR` | `info` | Colour of the idle clock: a profile colour name or `r,g,b` |
 
 ## Runtime Stream Switching
 

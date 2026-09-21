@@ -76,6 +76,9 @@ paths:
       tags:
       - display
       summary: Blank the panel, immediately
+      description: |-
+        Ends what is on the panel. With an idle screen set, that is what
+        comes back; without one, the panel goes dark.
       operationId: delete_display_display_delete
       responses:
         '200':
@@ -108,6 +111,46 @@ paths:
                 additionalProperties: true
                 type: object
                 title: Response Get Options Display Options Get
+  /display/idle:
+    put:
+      tags:
+      - display
+      summary: Switch what the panel shows between displays
+      description: |-
+        ``clock`` shows the time whenever nothing else is on the panel;
+        displays interrupt it and it comes back when they end. ``off`` leaves
+        the panel dark between displays. Not persisted: a restart returns to
+        ``LED_IDLE``.
+      operationId: put_idle_display_idle_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdleRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Put Idle Display Idle Put
+        '401':
+          description: Missing or wrong bearer token
+        '429':
+          description: Over LED_API_RATE_LIMIT writes per minute; see Retry-After
+        '400':
+          description: An unknown colour name
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - bearerAuth: []
   /streams:
     get:
       tags:
@@ -251,6 +294,39 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    IdleRequest:
+      properties:
+        mode:
+          type: string
+          enum:
+          - 'off'
+          - clock
+          title: Mode
+          description: 'clock: show the time whenever nothing else is on the panel.'
+        color:
+          anyOf:
+          - prefixItems:
+            - type: integer
+            - type: integer
+            - type: integer
+            type: array
+            maxItems: 3
+            minItems: 3
+          - type: string
+          - type: 'null'
+          title: Color
+          description: 'An RGB triple or a profile colour name. Omitted: keep the current colour.'
+          examples:
+          - - 0
+            - 100
+            - 255
+          - info
+      additionalProperties: false
+      type: object
+      required:
+      - mode
+      title: IdleRequest
+      description: Body of ``PUT /display/idle``.
     StreamsRequest:
       properties:
         streams:

@@ -2,7 +2,8 @@
 
 `POST /display` takes a DisplayConfig over HTTP and hands it to the display
 worker, exactly as a matched message would be handed over. `GET /display`
-says what is on the panel, `DELETE /display` blanks it.
+says what is on the panel, `DELETE /display` blanks it — back to the idle
+screen when one is set. `PUT /display/idle` switches that idle screen (#115).
 
 The writing endpoints need `LED_API_TOKEN` as a bearer token. Without one they
 are not registered at all: this is an API that writes to a physical display in
@@ -30,6 +31,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from led_catcher.config.settings import ApiConfig
+from led_catcher.display.clock import IDLE_MODES, IdleScreen
 from led_catcher.display.modes import _resolve_image, fonts_dirs, is_bare_name, visual_aid_dirs
 from led_catcher.profile.engine import DEFAULT_COLORS, DisplayConfig
 
@@ -110,6 +112,26 @@ class DisplayRequest(BaseModel):
         return value
 
 
+class IdleRequest(BaseModel):
+    """Body of ``PUT /display/idle``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["off", "clock"] = Field(description="clock: show the time whenever nothing else is on the panel.")
+    color: tuple[int, int, int] | str | None = Field(
+        default=None,
+        description="An RGB triple or a profile colour name. Omitted: keep the current colour.",
+        examples=[[0, 100, 255], "info"],
+    )
+
+    @field_validator("color")
+    @classmethod
+    def _rgb_in_range(cls, value):
+        if isinstance(value, tuple) and not all(0 <= c <= 255 for c in value):
+            raise ValueError("RGB components must be between 0 and 255")
+        return value
+
+
 class RateLimiter:
     """At most `limit` events in any `window` seconds. Thread-safe."""
 
@@ -144,6 +166,20 @@ def list_assets(dirs, suffixes: set[str]) -> list[str]:
     return sorted(names)
 
 
+def describe_idle(idle: IdleScreen | None, active: bool, color: tuple[int, int, int]) -> dict:
+    """The idle screen as ``GET /display`` reports it.
+
+    ``utcOffset`` is the panel's, in seconds east of UTC, so a browser in
+    another timezone draws the time the panel shows.
+    """
+    return {
+        "mode": idle.mode if idle is not None else "off",
+        "color": list(idle.color if idle is not None else color),
+        "active": active,
+        "utcOffset": time.localtime().tm_gmtoff,
+    }
+
+
 def describe(showing) -> dict:
     """The ``GET /display`` body."""
     if showing is None:
@@ -162,21 +198,33 @@ def create_display_router(
     tracker: EventTracker | None = None,
     colors: dict[str, tuple[int, int, int]] | None = None,
     clock: Callable[[], float] = time.monotonic,
+    idle: IdleScreen | None = None,
+    idle_color: tuple[int, int, int] = DEFAULT_COLORS["info"],
 ) -> APIRouter:
     """Build the ``/display`` router.
 
     ``worker`` is None when nothing drives a panel (``LED_MODE=web``); writes
     then reach only the simulator. ``colors`` are the profile's named colours,
-    which a request can use instead of an RGB triple.
+    which a request can use instead of an RGB triple. ``idle`` is the idle
+    screen the process started with; ``idle_color`` the colour a clock
+    switched on without one gets.
     """
     router = APIRouter()
     palette = dict(DEFAULT_COLORS)
     palette.update(colors or {})
+    # Kept here too, not only in the worker: in web mode there is no worker,
+    # and the simulator still shows the idle screen.
+    state = {"idle": idle, "color": idle.color if idle is not None else idle_color}
+
+    def idle_body() -> dict:
+        active = worker.idle_active if worker is not None else state["idle"] is not None
+        return describe_idle(state["idle"], active, state["color"])
 
     @router.get("/display", summary="What is on the panel right now", tags=["display"])
     async def get_display() -> dict:
         """Unauthenticated: it says nothing that is not already lit up in the room."""
         body = describe(worker.showing if worker is not None else None)
+        body["idle"] = idle_body()
         body["writable"] = api.writable
         return body
 
@@ -190,11 +238,12 @@ def create_display_router(
             "colors": {name: list(rgb) for name, rgb in palette.items()},
             "maxText": api.max_text,
             "maxDuration": MAX_DURATION_SECONDS,
+            "idleModes": list(IDLE_MODES),
             "writable": api.writable,
         }
 
     if not api.writable:
-        logger.info("LED_API_TOKEN not set — POST/DELETE /display are not registered")
+        logger.info("LED_API_TOKEN not set — POST/DELETE /display and PUT /display/idle are not registered")
         return router
 
     expected = api.token.encode()
@@ -239,6 +288,28 @@ def create_display_router(
             _record(tracker, config)
         return {"accepted": True, "panel": worker is not None, "display": describe_config(config)}
 
+    @router.put(
+        "/display/idle",
+        dependencies=[Depends(authorize)],
+        summary="Switch what the panel shows between displays",
+        tags=["display"],
+        responses={**WRITE_RESPONSES, 400: {"description": "An unknown colour name"}},
+    )
+    async def put_idle(body: IdleRequest) -> dict:
+        """``clock`` shows the time whenever nothing else is on the panel;
+        displays interrupt it and it comes back when they end. ``off`` leaves
+        the panel dark between displays. Not persisted: a restart returns to
+        ``LED_IDLE``."""
+        if body.color is not None:
+            state["color"] = resolve_color(body.color, palette)
+        state["idle"] = IdleScreen(mode=body.mode, color=state["color"]) if body.mode != "off" else None
+        logger.info("idle screen from API: %s", body.mode, extra={"system": API_SYSTEM, "idle": body.mode})
+        if worker is not None:
+            worker.set_idle(state["idle"])
+        if tracker is not None:
+            tracker.touch()
+        return {"accepted": True, "panel": worker is not None, "idle": idle_body()}
+
     @router.delete(
         "/display",
         dependencies=[Depends(authorize)],
@@ -247,6 +318,8 @@ def create_display_router(
         responses=WRITE_RESPONSES,
     )
     async def delete_display() -> dict:
+        """Ends what is on the panel. With an idle screen set, that is what
+        comes back; without one, the panel goes dark."""
         logger.info("blanking the panel from API", extra={"system": API_SYSTEM})
         if worker is not None:
             worker.blank()
@@ -283,15 +356,7 @@ def _to_config(body: DisplayRequest, palette: dict[str, tuple[int, int, int]], m
         if _resolve_image(body.image) is None:
             raise HTTPException(status_code=404, detail=f"image '{body.image}' not found")
 
-    if isinstance(body.color, str):
-        rgb = palette.get(body.color.lower())
-        if rgb is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"unknown colour '{body.color}' — use an RGB triple or one of: {', '.join(sorted(palette))}",
-            )
-    else:
-        rgb = body.color
+    rgb = resolve_color(body.color, palette)
 
     return DisplayConfig(
         kind=body.kind,
@@ -302,6 +367,19 @@ def _to_config(body: DisplayRequest, palette: dict[str, tuple[int, int, int]], m
         hold=body.hold,
         color=tuple(rgb),
     )
+
+
+def resolve_color(color, palette: dict[str, tuple[int, int, int]]) -> tuple[int, int, int]:
+    """An RGB triple as is, or a colour name looked up in the palette. Raises 400."""
+    if not isinstance(color, str):
+        return tuple(color)  # type: ignore[return-value]
+    rgb = palette.get(color.lower())
+    if rgb is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown colour '{color}' — use an RGB triple or one of: {', '.join(sorted(palette))}",
+        )
+    return tuple(rgb)  # type: ignore[return-value]
 
 
 def _record(tracker: EventTracker, config: DisplayConfig) -> None:

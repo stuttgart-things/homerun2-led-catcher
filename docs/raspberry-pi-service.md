@@ -40,6 +40,8 @@ Environment=LED_MODE=standalone
 Environment=LED_HARDWARE_MAPPING=adafruit-hat
 Environment=LED_GPIO_SLOWDOWN=2
 Environment=LED_BRIGHTNESS=100
+# the time on the panel whenever nothing else is up; off for a dark panel
+Environment=LED_IDLE=clock
 Environment=HEALTH_PORT=8080
 Environment=LOG_FORMAT=text
 Environment=LOG_LEVEL=info

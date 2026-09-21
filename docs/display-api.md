@@ -105,7 +105,8 @@ curl -sS -X POST localhost:8080/display \
 ## `DELETE /display`
 
 Blanks the panel **immediately**. Unlike a new display, it does not wait for a
-finite one to run out.
+finite one to run out. With an [idle screen](#idle-screen-the-clock) set, the
+clock comes back; for a dark panel, switch the idle screen off.
 
 ```bash
 curl -sS -X DELETE localhost:8080/display -H "Authorization: Bearer $TOKEN"
@@ -122,9 +123,56 @@ What is on the panel right now:
   "since": "2026-09-18T07:56:09.059991+00:00",
   "display": {"kind": "static", "text": "12:04", "image": "", "font": "6x10.bdf",
               "color": [0, 100, 255], "duration": 5.0, "hold": true},
+  "idle": {"mode": "clock", "color": [0, 100, 255], "active": false, "utcOffset": 7200},
   "writable": true
 }
 ```
+
+`idle.active` is true while the idle screen is what the panel shows. `utcOffset`
+is the panel's, in seconds east of UTC.
+
+## Idle screen: the clock
+
+With an idle screen, the panel shows the time whenever nothing else is on it,
+instead of going dark:
+
+```
+        14:05          10x20.bdf, the colon blinks every second
+      Mon 21.09        6x10.bdf, dimmer than the time
+```
+
+- Every display interrupts it at once, from the API or a matched message, and
+  is shown exactly as without it.
+- It comes back by itself when a finite display ends, and after `DELETE /display`.
+- A **held** display stays up. The clock returns only after the held display
+  has been replaced by a finite one that has ended.
+- The time is the process's local time (the Pi's timezone, or `TZ`), 24h. The
+  weekday names are English.
+- It redraws once a second on the display thread. On a Pi 3B+ that is nothing
+  next to the panel's own refresh thread, which keeps one core busy whether the
+  panel is lit or not.
+
+At startup, `LED_IDLE=clock` switches it on (default `off`), and `LED_IDLE_COLOR`
+sets the colour: a profile colour name or `r,g,b`, default `info`. An unknown
+value fails startup.
+
+At runtime:
+
+```bash
+curl -sS -X PUT localhost:8080/display/idle \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"mode":"clock","color":"success"}'
+
+curl -sS -X PUT localhost:8080/display/idle \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"mode":"off"}'
+```
+
+`color` is optional; without it the clock keeps its colour. The switch is not
+persisted: a restart returns to `LED_IDLE`. It counts against the same rate
+limit as the other writes. In the simulator, the **Idle screen** row of the
+Panel control does the same, and the clock takes the colour from the colour
+picker.
 
 ## OpenAPI
 

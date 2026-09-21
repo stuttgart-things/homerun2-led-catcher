@@ -10,6 +10,7 @@ BDF bitmap fonts for the LED matrix. `graphics.Font().LoadFont()` from
 | `4x6.bdf` | 4x6 px | longest lines, ~16 chars visible on a 64px panel |
 | `6x10.bdf` | 6x10 px | default, good balance of size and readability |
 | `7x13.bdf` | 7x13 px | headlines, short status words |
+| `10x20.bdf` | 10x20 px | the idle clock's time (`LED_IDLE=clock`); five characters fill 50 of 64 columns |
 
 These come from [hzeller/rpi-rgb-led-matrix](https://github.com/hzeller/rpi-rgb-led-matrix/tree/master/fonts)
 and are the X11 `misc-fixed` fonts, which are **public domain**
