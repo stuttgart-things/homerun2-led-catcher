@@ -138,8 +138,12 @@ instead of going dark:
 
 ```
         14:05          10x20.bdf, the colon blinks every second
-      Mon 21.09        6x10.bdf, dimmer than the time
+       Monday          6x10.bdf, dimmer than the time
+     21.09.2026        6x10.bdf, dimmer than the time
 ```
+
+The colon and the periods are set as pixels rather than taken from the fonts:
+the 10x20 colon sits on the baseline, and the 6x10 period is a 3x3 plus.
 
 - Every display interrupts it at once, from the API or a matched message, and
   is shown exactly as without it.
@@ -147,7 +151,7 @@ instead of going dark:
 - A **held** display stays up. The clock returns only after the held display
   has been replaced by a finite one that has ended.
 - The time is the process's local time (the Pi's timezone, or `TZ`), 24h. The
-  weekday names are English.
+  weekday is spelled out in English; `Wednesday`, the longest, is 54 of 64 px.
 - It redraws once a second on the display thread. On a Pi 3B+ that is nothing
   next to the panel's own refresh thread, which keeps one core busy whether the
   panel is lit or not.

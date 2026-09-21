@@ -766,9 +766,12 @@
         const SCROLL_STEP_MS = 30;   // modes._scroll_text: wait(0.03) per 1px
         const TICKER_LOOPS = 3;      // modes._ticker_text
         const HOLDING_KINDS = ['static', 'image', 'score'];
-        // display/clock.py: fonts, gap between the lines, the date's dimming.
-        const CLOCK = { timeFont: '10x20.bdf', dateFont: '6x10.bdf', gap: 2, dim: 0.6 };
-        const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        // display/clock.py: fonts, gaps between the lines, the dimming, and the
+        // colon and periods set as pixels ([dx, dy] from cell edge and baseline).
+        const CLOCK = { timeFont: '10x20.bdf', dateFont: '6x10.bdf', timeGap: 0, dateGap: 1, dim: 0.6 };
+        const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const COLON_DOTS = [-10, -9, -5, -4].flatMap(dy => [4, 5, 6].map(dx => [dx, dy]));
+        const PERIOD_DOTS = [[2, -1]];
         // GET /display .idle while an idle screen is set, else null (#115).
         let idleScreen = null;
 
@@ -1020,7 +1023,8 @@
             const colon = Math.floor(nowMs / 1000) % 2 === 0 ? ':' : ' ';
             return [
                 pad(d.getUTCHours()) + colon + pad(d.getUTCMinutes()),
-                WEEKDAYS[(d.getUTCDay() + 6) % 7] + ' ' + pad(d.getUTCDate()) + '.' + pad(d.getUTCMonth() + 1)
+                WEEKDAYS[(d.getUTCDay() + 6) % 7],
+                pad(d.getUTCDate()) + '.' + pad(d.getUTCMonth() + 1) + '.' + d.getUTCFullYear()
             ];
         }
 
@@ -1030,22 +1034,52 @@
             return w;
         }
 
+        // clock_face: [{f, x, baseline, text, dim}], [[x, y, dim]]
+        function clockFace(tf, df, texts) {
+            const [time, weekday, date] = texts;
+            const top = Math.max(0, Math.floor((GRID - (tf.height + CLOCK.timeGap + df.height + CLOCK.dateGap + df.height)) / 2));
+            const rows = [
+                [tf, top, time, false, ':', COLON_DOTS],
+                [df, top + tf.height + CLOCK.timeGap, weekday, true, null, []],
+                [df, top + tf.height + CLOCK.timeGap + df.height + CLOCK.dateGap, date, true, '.', PERIOD_DOTS]
+            ];
+            const lines = [], dots = [];
+            for (const [f, boxTop, raw, dim, mark, markDots] of rows) {
+                const x = Math.max(0, Math.floor((GRID - textWidth(f, raw)) / 2));
+                const baseline = boxTop + f.baseline;
+                let text = raw;
+                if (mark) {
+                    [...raw].forEach((ch, i) => {
+                        if (ch !== mark) return;
+                        const cell = x + textWidth(f, raw.slice(0, i));
+                        markDots.forEach(([dx, dy]) => dots.push([cell + dx, baseline + dy, dim]));
+                    });
+                    text = raw.split(mark).join(' ');
+                }
+                lines.push({ f: f, x: x, baseline: baseline, text: text, dim: dim });
+            }
+            return [lines, dots];
+        }
+
         async function idleClock(token) {
             const idle = idleScreen;
-            const tf = await guard(token, loadText(CLOCK.timeFont, '0123456789: '));
-            const df = await guard(token, loadText(CLOCK.dateFont, '0123456789. ' + WEEKDAYS.join('')));
+            // ':' and '.' are measured like the panel measures them, though set as pixels.
+            const tf = await guard(token, loadText(CLOCK.timeFont, '0123456789 :'));
+            const df = await guard(token, loadText(CLOCK.dateFont, '0123456789 .' + WEEKDAYS.join('')));
             const dim = idle.color.map(c => Math.floor(c * CLOCK.dim));
-            const top = Math.max(0, Math.floor((GRID - (tf.height + CLOCK.gap + df.height)) / 2));
             let drawn = null;
             for (;;) {
                 const now = Date.now();
-                const [t, d] = clockTexts(now, idle.utcOffset);
-                if (t + d !== drawn) {
+                const texts = clockTexts(now, idle.utcOffset);
+                if (texts.join('|') !== drawn) {
+                    const [lines, dots] = clockFace(tf, df, texts);
                     clearMatrix();
-                    drawText(tf, Math.max(0, Math.floor((GRID - textWidth(tf, t)) / 2)), top + tf.baseline, idle.color, t);
-                    drawText(df, Math.max(0, Math.floor((GRID - textWidth(df, d)) / 2)),
-                             top + tf.height + CLOCK.gap + df.baseline, dim, d);
-                    drawn = t + d;
+                    for (const l of lines) drawText(l.f, l.x, l.baseline, l.dim ? dim : idle.color, l.text);
+                    for (const [x, y, isDim] of dots) {
+                        const c = isDim ? dim : idle.color;
+                        if (x >= 0 && x < GRID && y >= 0 && y < GRID) setPixel(x, y, c[0], c[1], c[2], 1.0);
+                    }
+                    drawn = texts.join('|');
                 }
                 await sleep(token, 1000 - (now % 1000) + 5);
             }
