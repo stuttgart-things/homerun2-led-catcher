@@ -102,6 +102,11 @@ The log shows `RGB LED matrix initialized (…)`, and `/healthz` reports
 | After editing the unit | `sudo systemctl daemon-reload && sudo systemctl restart led-catcher` |
 | Log since the last boot | `journalctl -u led-catcher -b` |
 
+`Restart=always` brings the service back after a crash, but not instantly. On a
+Pi 3B+ `/healthz` answers about 15 s after the process died: 5 s `RestartSec`,
+then about 6 s of Python start-up before the first log line, and a moment for the
+panel and the web server.
+
 !!! warning "One process per panel"
     While the service runs, it owns the panel and port 8080. Stop it
     (`sudo systemctl stop led-catcher`) before starting `python -m led_catcher` by

@@ -267,7 +267,7 @@ behaves exactly as before.
 | Variable | Default | Maps to | Notes |
 |----------|---------|---------|-------|
 | `LED_HARDWARE_MAPPING` | `adafruit-hat` | `hardware_mapping` | `adafruit-hat-pwm` if the GPIO4↔GPIO18 bridge (PWM mod) is soldered; every mapping is compiled into the library |
-| `LED_GPIO_SLOWDOWN` | *(library default)* | `gpio_slowdown` | Raise it if the panel ghosts, flickers or shows garbage. `2` is verified on a Pi 3B+ |
+| `LED_GPIO_SLOWDOWN` | *(library default)* | `gpio_slowdown` | Raise it if the panel ghosts, flickers or shows garbage. On a Pi 3B+ every value from `0` to `4` is clean (see below); `2` is a safe choice there |
 | `LED_BRIGHTNESS` | `100` | `brightness` | 1–100 |
 | `LED_ROWS` / `LED_COLS` | `64` | `rows` / `cols` | |
 | `LED_PANEL_TYPE` | *(empty)* | `panel_type` | For driver chips needing an init sequence, e.g. `FM6126A` |
@@ -291,13 +291,28 @@ the mapping it names is the one the library rejected.
 
 ### Verified on hardware
 
-Pi 3B+, Adafruit HAT, 64x64 HUB75, Raspbian Bullseye, `rgbmatrix` built with
-`HARDWARE_DESC=adafruit-hat-pwm`:
+Raspberry Pi 3 Model B Plus Rev 1.3, Adafruit HAT, 64x64 HUB75, Raspberry Pi OS
+Trixie (64-bit), rpi-rgb-led-matrix `master` @ `51d3231`, installed by the Ansible
+play (2026-09-21, [#78](https://github.com/stuttgart-things/homerun2-led-catcher/issues/78)).
+Each value was judged by eye on `test-pattern.png`:
 
-| `LED_HARDWARE_MAPPING` | `LED_GPIO_SLOWDOWN` | Result |
+| Option | Values | Result |
 |---|---|---|
-| `adafruit-hat-pwm` | 2 | lights up |
-| `adafruit-hat` | 2 | lights up |
+| `LED_GPIO_SLOWDOWN` | unset, `0`, `1`, `2`, `3`, `4` | all clean: no ghosting, no garbled rows |
+| `LED_HARDWARE_MAPPING` | `adafruit-hat`, `adafruit-hat-pwm` | both light up, no visible difference in flicker |
+| `LED_BRIGHTNESS` | `30` | visibly dimmer |
+| `LED_PWM_BITS` | `4` / `11` | ramps band / ramps smooth |
+| `LED_PANEL_TYPE` | `FM6126A` | no change, since this panel does not use that chip |
+
+So on this board the slowdown is not what makes a panel misbehave: `2`, as in the
+unit on [Run it as a service](raspberry-pi-service.md), is a safe choice, and so is
+leaving it unset. Other boards, the Pi 4 and 5 in particular, are faster and not
+tested yet. There, raise it until the test pattern is clean.
+
+An older run (Pi 3B+, Raspbian Bullseye, `rgbmatrix` built with
+`HARDWARE_DESC=adafruit-hat-pwm`) lit the panel with both mappings at slowdown `2`.
+The build-time setting is not needed: the Python binding accepts every mapping at
+runtime.
 
 ### Panel sizes other than 64x64
 

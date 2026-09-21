@@ -78,12 +78,14 @@ A growing `pending` count means handlers are slower than the inflow — usually 
 | Text missing, `font ... not found` warning | font not in any search dir | `task fetch-fonts`, or set `FONTS_DIR` |
 | Process exits immediately at startup | `LoadFont()` on a missing path, or no GPIO permission | run with `sudo`, check the font warning above it |
 | Heavy flicker | audio driver still loaded, or no PWM mod | `lsmod \| grep snd_bcm2835` must be empty; use `LED_HARDWARE_MAPPING=adafruit-hat` if the bridge is not soldered |
-| Ghosting, garbled rows, wrong colours | GPIO too fast for this panel | raise `LED_GPIO_SLOWDOWN` (`2` on a Pi 3B+), or set `LED_PANEL_TYPE=FM6126A` if the panel needs that init sequence |
+| Ghosting, garbled rows, wrong colours | GPIO too fast for this panel | raise `LED_GPIO_SLOWDOWN` until `test-pattern.png` is clean, or set `LED_PANEL_TYPE=FM6126A` if the panel needs that init sequence. On a Pi 3B+ every value from `0` to `4` was clean, so on that board look at the wiring and the power supply first |
 | Process aborts inside `RGBMatrix()` | unknown `hardware_mapping` | the `initializing RGB LED matrix` line above it names the value that was handed over |
 | Scoreboard runs off the panel | `score` is laid out for 64x64 only | keep `LED_ROWS`/`LED_COLS` at 64 for that mode — the warning names the size it got |
 | `JSON.GET returned None` | stream entry points at a missing document | the producer wrote `XADD` without `JSON.SET` |
 | `cannot reach Redis` from the Pi | in-cluster Redis is not exposed | NodePort/Ingress, or an SSH tunnel to the cluster |
 | First run shows nothing, later ones work | group created at `id=0`, backlog replays | expected — `XACK` drains it once |
+| After a crash or `systemctl kill`, `/healthz` is down for ~15 s | `RestartSec=5`, then ~6 s of Python start-up on a Pi 3B+ before the first log line | expected: measured 13.4 s from kill to a healthy `/healthz` |
+| The play reports a different address than the inventory | the Pi is on Ethernet and Wi-Fi at the same time, and the report shows the default-route one | both work; `ip -4 -o addr` lists them. Fix in the play: [stuttgart-things/ansible#1248](https://github.com/stuttgart-things/ansible/issues/1248) |
 
 ## Updating
 

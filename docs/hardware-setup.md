@@ -90,7 +90,7 @@ The panel is configured with environment variables:
 |---------|---------|
 | `LED_ROWS` / `LED_COLS` | `64` |
 | `LED_HARDWARE_MAPPING` | `adafruit-hat` (`adafruit-hat-pwm` with the PWM mod) |
-| `LED_GPIO_SLOWDOWN` | library default (`2` verified on a Pi 3B+) |
+| `LED_GPIO_SLOWDOWN` | library default (on a Pi 3B+ every value from `0` to `4` is clean) |
 | `LED_BRIGHTNESS` | `100` |
 | `LED_PANEL_TYPE`, `LED_PWM_BITS` | unset |
 
