@@ -37,6 +37,10 @@ The health endpoint is available at `http://localhost:8080/healthz`.
 
 > Full walkthrough — Ansible prep, venv, systemd unit, on-device testing:
 > [docs/raspberry-pi-deployment.md](docs/raspberry-pi-deployment.md)
+>
+> The whole install in one run: the Ansible play `sthings.container.homerun2_led_catcher_pi`,
+> with `ansible-playbook` or, with no local Ansible, through the Dagger `ansible` module —
+> both in [docs/raspberry-pi-service.md](docs/raspberry-pi-service.md#ansible-the-whole-base-install-in-one-run).
 
 ### Requirements
 
