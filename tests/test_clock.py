@@ -414,3 +414,18 @@ async def test_in_web_mode_the_idle_screen_reaches_the_simulator_only():
 
     assert put.json()["panel"] is False
     assert body["idle"]["mode"] == "clock" and body["idle"]["active"] is True
+
+
+async def test_the_panel_control_has_its_own_idle_row():
+    """Its options come with the page, so the list is never empty; and it has
+    its own colour, not the one the Show button uses."""
+    from led_catcher.web import create_web_app
+
+    app = create_web_app(EventTracker(), display_api=True)
+    async with client(app) as c:
+        page = (await c.get("/")).text
+
+    assert '<option value="off">off</option>' in page and '<option value="clock">clock</option>' in page
+    assert 'id="pc-idle-color"' in page
+    assert "hexToRgb($('pc-idle-color').value)" in page
+    assert "color-scheme: dark" in page, "an open <select> list is unreadable on a light native popup"

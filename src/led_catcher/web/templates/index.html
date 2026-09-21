@@ -10,6 +10,8 @@
     <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script>
     <style>
         :root {
+            /* Native parts of form controls (the open <select> list) follow the page. */
+            color-scheme: dark;
             --bg-primary: #0f172a;
             --bg-secondary: #1e293b;
             --bg-tertiary: #334155;
@@ -242,6 +244,15 @@
             border: 1px solid var(--bg-tertiary);
             background: var(--bg-primary);
             color: var(--text-primary);
+        }
+
+        .panel-control option {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .panel-control .pc-section {
+            margin-top: 14px;
         }
 
         .panel-control input[type=color] {
@@ -1120,8 +1131,16 @@
                 if (last && last.kind !== 'clear' && (held || Date.now() / 1000 - last.at < last.duration)) submit(last);
             }
             setIdle(panel.idle);
+            showIdleControl(panel.idle);
+        }
+
+        // The Panel control's idle row follows the panel, whoever switched it.
+        function showIdleControl(idle) {
             const select = document.getElementById('pc-idle');
-            if (select && panel.idle) select.value = panel.idle.mode;
+            const color = document.getElementById('pc-idle-color');
+            if (!select || !idle) return;
+            select.value = idle.mode;
+            color.value = '#' + idle.color.map(c => c.toString(16).padStart(2, '0')).join('');
         }
 
         function resync(initial) {
@@ -1177,15 +1196,22 @@
                 $('pc-image-label').hidden = !image;
             }
 
-            fetch('/display/options').then(r => r.json()).then(function (o) {
-                fill($('pc-idle'), o.idleModes, idleScreen ? idleScreen.mode : 'off');
-                fill($('pc-kind'), o.kinds, 'text');
-                fill($('pc-font'), o.fonts, '6x10.bdf');
-                fill($('pc-image'), o.images, o.images[0]);
-                $('pc-text').maxLength = o.maxText;
-                $('pc-duration').max = o.maxDuration;
-                syncKind();
-            });
+            // Retried rather than left empty: a page loaded while the service
+            // restarts would otherwise keep empty lists until reloaded.
+            function loadOptions() {
+                fetch('/display/options').then(r => r.json()).then(function (o) {
+                    fill($('pc-kind'), o.kinds, 'text');
+                    fill($('pc-font'), o.fonts, '6x10.bdf');
+                    fill($('pc-image'), o.images, o.images[0]);
+                    $('pc-text').maxLength = o.maxText;
+                    $('pc-duration').max = o.maxDuration;
+                    syncKind();
+                }).catch(function (e) {
+                    setStatus('panel options not loaded, retrying: ' + e, 'error');
+                    setTimeout(loadOptions, 2000);
+                });
+            }
+            loadOptions();
             $('pc-kind').addEventListener('change', syncKind);
 
             function headers() {
@@ -1236,7 +1262,7 @@
             $('pc-idle-set').addEventListener('click', function () {
                 const mode = $('pc-idle').value;
                 const body = { mode: mode };
-                if (mode !== 'off') body.color = hexToRgb($('pc-color').value);
+                if (mode !== 'off') body.color = hexToRgb($('pc-idle-color').value);
                 send('PUT', body, '/display/idle', 'idle screen: ' + mode);
             });
         })();
