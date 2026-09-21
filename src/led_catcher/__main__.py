@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import signal
 import sys
@@ -26,6 +27,23 @@ logger = logging.getLogger("led_catcher")
 
 # How often standalone mode checks that the display worker is still alive.
 WATCHDOG_INTERVAL = 1.0
+
+
+class _Server(uvicorn.Server):
+    """A uvicorn server that leaves the signal handlers to us.
+
+    uvicorn's own ``capture_signals()`` swaps in its handler for SIGINT and
+    SIGTERM while it serves. Ours, installed with ``loop.add_signal_handler``,
+    still fires through the loop's wakeup fd, so one signal started two
+    shutdowns: uvicorn's cancelled every open simulator stream, and when
+    ``serve()`` returned it re-raised the signal, which logged "received
+    shutdown signal" a second time (#105). With this, the process has one
+    shutdown path: the ``stop`` event, which also ends the event streams.
+    """
+
+    @contextlib.contextmanager
+    def capture_signals(self):
+        yield
 
 
 def _resolve_mode(cfg: Config) -> str:
@@ -60,6 +78,7 @@ def _build_app(
     tracker: EventTracker | None,
     consumer: RedisConsumer | None,
     profile: Profile,
+    stop: asyncio.Event | None = None,
 ) -> FastAPI:
     """Build the combined FastAPI app: health, /display, /streams and the optional simulator."""
     if tracker is not None:
@@ -73,6 +92,7 @@ def _build_app(
             presets=cfg.ui_stream_presets,
             mode=mode,
             display_api=cfg.api.writable,
+            stop=stop,
         )
         app.get("/healthz")(health_app.routes[0].endpoint)
         app.get("/health")(health_app.routes[1].endpoint)
@@ -181,6 +201,10 @@ async def _run(cfg: Config) -> int:
         },
     )
 
+    # Installed before anything starts, so a signal during startup is not lost.
+    stop = asyncio.Event()
+    _install_signal_handlers(stop)
+
     profile = load_profile(cfg.profile_path)
     consumer: RedisConsumer | None = None
     if standalone:
@@ -209,7 +233,7 @@ async def _run(cfg: Config) -> int:
         )
 
     # Build combined app (health + display + control + optional web simulator)
-    app = _build_app(cfg, mode, tracker, consumer, profile)
+    app = _build_app(cfg, mode, tracker, consumer, profile, stop=stop)
 
     # Start server in background
     server_config = uvicorn.Config(
@@ -218,7 +242,7 @@ async def _run(cfg: Config) -> int:
         port=cfg.health_port,
         log_level="warning",
     )
-    server = uvicorn.Server(server_config)
+    server = _Server(server_config)
     server_task = asyncio.create_task(server.serve())
 
     if tracker is not None:
@@ -227,10 +251,10 @@ async def _run(cfg: Config) -> int:
         logger.info("health server started on port %d", cfg.health_port)
 
     if standalone:
-        clean = await _run_standalone(server_task, worker_alive=lambda: worker.alive)
+        clean = await _run_standalone(server_task, worker_alive=lambda: worker.alive, stop=stop)
     else:
         # Run consumer (blocks until shutdown signal, or until the consumer gives up)
-        clean = await _run_consumer(consumer)
+        clean = await _run_consumer(consumer, stop=stop)
 
     # After the consumer, so nothing is still submitting displays. Leaves the
     # panel dark rather than stuck on the last score.
