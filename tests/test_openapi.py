@@ -20,13 +20,14 @@ def test_the_committed_spec_is_current():
 
 
 def test_it_documents_the_machine_facing_api_and_nothing_else():
-    assert set(spec()["paths"]) == {"/display", "/display/options", "/streams", "/healthz"}
+    assert set(spec()["paths"]) == {"/display", "/display/idle", "/display/options", "/streams", "/healthz"}
 
 
 def test_writes_need_the_token_and_reads_do_not():
     paths = spec()["paths"]
     assert paths["/display"]["post"]["security"] == [{"bearerAuth": []}]
     assert paths["/display"]["delete"]["security"] == [{"bearerAuth": []}]
+    assert paths["/display/idle"]["put"]["security"] == [{"bearerAuth": []}]
     assert "security" not in paths["/display"]["get"]
     assert "security" not in paths["/display/options"]["get"]
     assert spec()["components"]["securitySchemes"]["bearerAuth"]["scheme"] == "bearer"

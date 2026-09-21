@@ -15,6 +15,7 @@ from led_catcher.config import Config, load_config, setup_logging
 from led_catcher.config.settings import LED_MODES
 from led_catcher.consumer import RedisConsumer
 from led_catcher.display import get_worker, reset_worker
+from led_catcher.display.clock import IdleScreen
 from led_catcher.handlers.control import create_control_router
 from led_catcher.handlers.display_api import create_display_router
 from led_catcher.handlers.health import health_app, set_build_info, set_consumer_state, set_display_state
@@ -72,6 +73,24 @@ def _build_handlers(cfg: Config, mode: str, profile: Profile) -> tuple[list, Eve
     return handlers, tracker
 
 
+def _idle_screen(cfg: Config, profile: Profile) -> tuple[IdleScreen | None, tuple[int, int, int]]:
+    """The idle screen from LED_IDLE and LED_IDLE_COLOR, and its colour.
+
+    The colour is resolved even with the idle screen off: PUT /display/idle can
+    switch the clock on later without naming one. Raises ValueError on a colour
+    name the profile does not know.
+    """
+    color = cfg.idle_color
+    if isinstance(color, str):
+        rgb = profile.colors.get(color)
+        if rgb is None:
+            known = ", ".join(sorted(profile.colors))
+            raise ValueError(f"LED_IDLE_COLOR '{color}': not a colour in the profile ({known})")
+        color = rgb
+    idle = IdleScreen(mode=cfg.idle, color=tuple(color)) if cfg.idle != "off" else None
+    return idle, tuple(color)
+
+
 def _build_app(
     cfg: Config,
     mode: str,
@@ -79,6 +98,8 @@ def _build_app(
     consumer: RedisConsumer | None,
     profile: Profile,
     stop: asyncio.Event | None = None,
+    idle: IdleScreen | None = None,
+    idle_color: tuple[int, int, int] = (0, 100, 255),
 ) -> FastAPI:
     """Build the combined FastAPI app: health, /display, /streams and the optional simulator."""
     if tracker is not None:
@@ -102,7 +123,11 @@ def _build_app(
     # The worker exists already in every mode that drives the panel; `web`
     # has none, and its /display writes reach only the simulator.
     worker = get_worker(panel=cfg.panel) if mode in ("led", "full", "standalone") else None
-    app.include_router(create_display_router(worker, cfg.api, tracker=tracker, colors=profile.colors))
+    if worker is not None:
+        worker.set_idle(idle)
+    app.include_router(
+        create_display_router(worker, cfg.api, tracker=tracker, colors=profile.colors, idle=idle, idle_color=idle_color)
+    )
     if consumer is not None:
         app.include_router(create_control_router(consumer))
     return app
@@ -206,6 +231,13 @@ async def _run(cfg: Config) -> int:
     _install_signal_handlers(stop)
 
     profile = load_profile(cfg.profile_path, rules_expected=not standalone)
+    try:
+        idle, idle_color = _idle_screen(cfg, profile)
+    except ValueError as exc:
+        logger.error("invalid configuration: %s", exc)
+        return 1
+    if idle is not None:
+        logger.info("idle screen: %s", idle.mode)
     consumer: RedisConsumer | None = None
     if standalone:
         # No Redis, no consumer, no rule matching: the /display API is the
@@ -233,7 +265,7 @@ async def _run(cfg: Config) -> int:
         )
 
     # Build combined app (health + display + control + optional web simulator)
-    app = _build_app(cfg, mode, tracker, consumer, profile, stop=stop)
+    app = _build_app(cfg, mode, tracker, consumer, profile, stop=stop, idle=idle, idle_color=idle_color)
 
     # Start server in background
     server_config = uvicorn.Config(

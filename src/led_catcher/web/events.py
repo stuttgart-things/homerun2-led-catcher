@@ -69,6 +69,12 @@ class EventTracker:
             event.id = self._version
             self._events.appendleft(event)
 
+    def touch(self) -> None:
+        """Signal a change that is not an event, such as the idle screen being
+        switched: the event stream fires, and the canvas re-reads /display."""
+        with self._lock:
+            self._version += 1
+
     def recent(self, n: int = 20) -> list[LedEvent]:
         with self._lock:
             return list(self._events)[:n]

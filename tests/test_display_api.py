@@ -23,6 +23,12 @@ class FakeWorker:
         self.submitted: list[DisplayConfig] = []
         self.blanks = 0
         self.showing: Showing | None = None
+        self.idle = None
+        self.idle_active = False
+
+    def set_idle(self, idle) -> None:
+        self.idle = idle
+        self.idle_active = idle is not None
 
     def submit(self, config) -> None:
         self.submitted.append(config)

@@ -89,6 +89,8 @@ class Config:
     health_port: int = 8080
     profile_path: str = "profile.yaml"
     ui_stream_presets: list[list[str]] = field(default_factory=list)
+    idle: str = "off"  # the idle screen: off, clock (#115)
+    idle_color: str | tuple[int, int, int] = "info"  # a colour name, resolved against the profile, or RGB
     redis_startup_timeout: float = DEFAULT_REDIS_STARTUP_TIMEOUT
     log_format: str = "json"
     log_level: str = "info"
@@ -152,6 +154,31 @@ def load_api_config() -> ApiConfig:
         max_text=_env_int("LED_API_MAX_TEXT", 256, minimum=1),
         rate_limit=_env_int("LED_API_RATE_LIMIT", 30, minimum=1),
     )
+
+
+def parse_idle(raw: str) -> str:
+    """``LED_IDLE``: what the panel shows between displays (#115)."""
+    from led_catcher.display.clock import IDLE_MODES
+
+    value = raw.strip().lower() or "off"
+    if value not in IDLE_MODES:
+        raise ValueError(f"LED_IDLE '{raw}': must be one of {', '.join(IDLE_MODES)}")
+    return value
+
+
+def parse_color(key: str, raw: str, default: str) -> str | tuple[int, int, int]:
+    """A colour name, left for the profile to resolve, or ``r,g,b``."""
+    value = raw.strip() or default
+    if "," not in value:
+        return value.lower()
+    parts = [part.strip() for part in value.split(",")]
+    try:
+        rgb = tuple(int(part) for part in parts)
+    except ValueError:
+        rgb = ()
+    if len(rgb) != 3 or not all(0 <= c <= 255 for c in rgb):
+        raise ValueError(f"{key} '{raw}': must be a colour name or r,g,b with each part 0-255")
+    return rgb  # type: ignore[return-value]
 
 
 def parse_streams(streams_env: str, stream_fallback: str) -> list[str]:
@@ -275,6 +302,8 @@ def load_config() -> Config:
         health_port=int(_getenv("HEALTH_PORT", "8080")),
         profile_path=_getenv("PROFILE_PATH", "profile.yaml"),
         ui_stream_presets=parse_stream_presets(_getenv("UI_STREAM_PRESETS", ""), redis_cfg.streams),
+        idle=parse_idle(_getenv("LED_IDLE", "")),
+        idle_color=parse_color("LED_IDLE_COLOR", _getenv("LED_IDLE_COLOR", ""), "info"),
         redis_startup_timeout=parse_redis_startup_timeout(_getenv("REDIS_STARTUP_TIMEOUT", "")),
         log_format=_getenv("LOG_FORMAT", "json"),
         log_level=_getenv("LOG_LEVEL", "info"),

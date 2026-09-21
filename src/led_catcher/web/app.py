@@ -232,6 +232,17 @@ CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocompl
         <button type="submit">Show</button>
         <button type="button" class="secondary" id="pc-blank">Blank</button>
     </div>
+    <h2 class="pc-section">Idle screen</h2>
+    <label for="pc-idle">Mode</label>
+    <div class="row-inline">
+        <select id="pc-idle">
+            <option value="off">off</option>
+            <option value="clock">clock</option>
+        </select>
+        <label for="pc-idle-color">Colour</label>
+        <input type="color" id="pc-idle-color" value="#0064ff">
+        <button type="button" class="secondary" id="pc-idle-set">Set</button>
+    </div>
     <div class="status" id="pc-status"></div>
 </form>"""
 

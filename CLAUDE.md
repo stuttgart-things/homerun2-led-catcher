@@ -89,9 +89,9 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/handlers/led_handler.py` — LED matrix display handler
 - `src/led_catcher/handlers/health.py` — FastAPI health endpoint
 - `src/led_catcher/handlers/control.py` — `GET`/`POST /streams` runtime stream switching
-- `src/led_catcher/handlers/display_api.py` — `GET`/`POST`/`DELETE /display`: token auth, text cap, rate limit
+- `src/led_catcher/handlers/display_api.py` — `GET`/`POST`/`DELETE /display`, `PUT /display/idle`: token auth, text cap, rate limit
 - `src/led_catcher/openapi.py` — generates `docs/openapi.yaml` (`task openapi`); the API entity in `catalog-info.yaml` points at it, and `tests/test_openapi.py` fails when it is stale
-- `src/led_catcher/display/worker.py` — display worker thread: newest wins, `blank()`, `showing`
+- `src/led_catcher/display/worker.py` — display worker thread: newest wins, `blank()`, `showing`, the idle screen between displays
 - `src/led_catcher/web/app.py` — simulator routes, `/ui/streams` control partial, SSE generator
 - `src/led_catcher/web/preview.py` — `/api/preview/*`: BDF glyphs and prepared frames, so the canvas draws what the panel draws
 - `src/led_catcher/config/settings.py` — Config dataclass, env loading, JSON log formatter
@@ -99,6 +99,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/profile/engine.py` — YAML profile loading, rule matching, Jinja2 templating
 - `src/led_catcher/display/matrix.py` — rpi-rgb-led-matrix wrapper (no-op fallback)
 - `src/led_catcher/display/modes.py` — display mode implementations, asset lookup
+- `src/led_catcher/display/clock.py` — the idle screen: clock texts, layout, drawing; the canvas mirrors it
 - `src/led_catcher/tools/publish.py` — `led-catcher-publish` test message producer
 - `dagger/main.go` — Dagger CI module (delegates to stuttgart-things/dagger/python)
 - `.github/workflows/build-test.yaml` — GitHub Actions CI workflow
@@ -140,6 +141,8 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `LED_COLS` | `64` | Panel columns |
 | `LED_PANEL_TYPE` | *(empty)* | Panel driver chip needing an init sequence, e.g. `FM6126A` |
 | `LED_PWM_BITS` | *(library default)* | PWM bits, 1–11. Lower trades colour depth for refresh rate |
+| `LED_IDLE` | `off` | Idle screen: `clock` shows the time whenever nothing else is on the panel, `off` leaves it dark. Switchable at runtime with `PUT /display/idle` |
+| `LED_IDLE_COLOR` | `info` | Colour of the idle clock: a profile colour name or `r,g,b` |
 
 ## Testing
 
