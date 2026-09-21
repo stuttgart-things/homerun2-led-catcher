@@ -156,7 +156,7 @@ All configuration is via environment variables:
 | `VISUAL_AID_DIR` | `<repo>/visual_aid` | Directory searched for images and GIFs |
 | `LED_DEFAULT_FONT` | `6x10.bdf` | Fallback font when a rule names a missing one |
 | `LED_HARDWARE_MAPPING` | `adafruit-hat` | Panel wiring: `adafruit-hat`, `adafruit-hat-pwm` (PWM mod soldered), `regular`, … |
-| `LED_GPIO_SLOWDOWN` | *(library default)* | GPIO slowdown. Raise it if the panel ghosts or glitches — `2` is verified on a Pi 3B+ |
+| `LED_GPIO_SLOWDOWN` | *(library default)* | GPIO slowdown. Raise it if the panel ghosts or glitches. On a Pi 3B+ every value from `0` to `4` is clean; `2` is a safe choice there, not a requirement |
 | `LED_BRIGHTNESS` | `100` | Panel brightness, 1–100 |
 | `LED_ROWS` | `64` | Panel rows |
 | `LED_COLS` | `64` | Panel columns |
