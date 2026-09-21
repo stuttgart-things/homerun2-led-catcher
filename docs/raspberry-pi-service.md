@@ -116,18 +116,19 @@ panel and the web server.
 
 ## Ansible: the whole base install in one run
 
-[`plays/homerun2-led-catcher-pi.yaml`](https://github.com/stuttgart-things/ansible/blob/main/plays/homerun2-led-catcher-pi.yaml)
-in `stuttgart-things/ansible` does the whole [install](raspberry-pi-deployment.md) and this
-page on a freshly written SD card:
+The play `sthings.container.homerun2_led_catcher_pi`, in the
+[`sthings.container` collection](https://github.com/stuttgart-things/ansible/tree/main/collections/container)
+of `stuttgart-things/ansible`, does the whole [install](raspberry-pi-deployment.md) and
+this page on a freshly written SD card:
 
 - the boot config, the audio blacklist and a reboot (only when those changed)
 - the packages, `python3-pil` included
 - the home permissions
 - the catcher and the matrix library in the venv, with the Pillow check
-- the secrets file and the unit, then a `/healthz` check
+- the secrets file and the unit, with `VERSION` and `COMMIT` for `/healthz`, then a `/healthz` check
 
 Running it again changes nothing; the matrix library is only rebuilt when its
-checkout moves.
+checkout moves. On a first install, the service starts exactly once.
 
 ```ini
 # inventory.ini
@@ -136,15 +137,65 @@ checkout moves.
 ```
 
 ```bash
+COLLECTION_VERSION=26.921.1350   # a sthings-container release
+ansible-galaxy collection install -f \
+  https://github.com/stuttgart-things/ansible/releases/download/sthings-container-${COLLECTION_VERSION}/sthings-container-${COLLECTION_VERSION}.tar.gz
+
 # standalone, as for the hardware tests
-ansible-playbook -i inventory.ini plays/homerun2-led-catcher-pi.yaml -e led_api_token=change-me
+ansible-playbook -i inventory.ini sthings.container.homerun2_led_catcher_pi -e led_api_token=change-me
 
 # with Redis
-ansible-playbook -i inventory.ini plays/homerun2-led-catcher-pi.yaml \
+ansible-playbook -i inventory.ini sthings.container.homerun2_led_catcher_pi \
   -e led_mode=full -e led_redis_addr=redis.example.com \
   -e led_api_token=change-me -e led_redis_password=secret
 ```
 
 The play's header lists every variable: `led_catcher_version`,
 `led_hardware_mapping`, `led_gpio_slowdown`, `led_allow_reboot`, and more.
+
+### Without a local Ansible: through Dagger
+
+The [`ansible` module](https://github.com/stuttgart-things/dagger/tree/main/ansible) of
+`stuttgart-things/dagger` runs the play in a container: only Dagger and Docker are
+needed on the machine. This is how the hardware tests were run
+([#96](https://github.com/stuttgart-things/homerun2-led-catcher/issues/96)). It logs
+in with a password, over `sshpass`, and does not check the Pi's host key.
+
+```yaml
+# requirements.yml: the collection, from its release
+collections:
+  - name: https://github.com/stuttgart-things/ansible/releases/download/sthings-container-26.921.1350/sthings-container-26.921.1350.tar.gz
+    type: url
+```
+
+```bash
+# the inventory without ansible_user: the module passes the user
+printf '[ledpi]\n192.168.10.120\n' > inventory.ini
+
+# secrets only in the environment, never on the command line
+export SSH_USER=sthings SSH_PASSWORD='…'
+printf 'LED_API_TOKEN=%s\n' 'change-me' > ansible.env   # chmod 600, delete afterwards
+
+dagger -m github.com/stuttgart-things/dagger/ansible call execute \
+  --src . \
+  --requirements requirements.yml \
+  --inventory inventory.ini \
+  --playbooks sthings.container.homerun2_led_catcher_pi \
+  --ssh-user env:SSH_USER \
+  --ssh-password env:SSH_PASSWORD \
+  --env-secrets file:ansible.env \
+  --parameters "ansible_become_password='{{ lookup(\"env\", \"ANSIBLE_PASSWORD\") }}' led_api_token='{{ lookup(\"env\", \"LED_API_TOKEN\") }}' run_id=$(date +%s%N)" \
+  --progress plain
+```
+
+- **`run_id=$(date +%s%N)` is not optional.** Dagger caches the `ansible-playbook`
+  step. Without a value that changes, a second identical call replays the first
+  result and never touches the Pi, which looks exactly like a run that changed
+  nothing.
+- The extra-vars carry only `lookup("env", …)` expressions: the password and the
+  token reach Ansible as Dagger secrets and stay masked in the `-vv` output.
+  `ANSIBLE_PASSWORD` is set by the module from `--ssh-password`, and is reused
+  here as the `sudo` password.
+- Further variables go into `--parameters` the same way, e.g.
+  `led_catcher_version=v0.12.0`.
 
