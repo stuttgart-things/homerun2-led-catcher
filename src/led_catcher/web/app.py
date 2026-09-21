@@ -36,6 +36,7 @@ def create_web_app(
     presets: list[list[str]] | None = None,
     mode: str = "web",
     display_api: bool = False,
+    stop: asyncio.Event | None = None,
 ) -> FastAPI:
     """Create the HTMX simulator FastAPI app.
 
@@ -47,6 +48,9 @@ def create_web_app(
     active subscription and switches it between ``presets``. Without one the
     simulator renders exactly as before and the ``/ui/streams`` routes are not
     registered — there would be nothing for them to act on.
+
+    ``stop`` is the process's shutdown event. Setting it ends every open event
+    stream, so a shutdown finds none left to cut off (#105).
     """
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     presets = presets or []
@@ -146,7 +150,7 @@ def create_web_app(
 
     @app.get("/api/events/stream")
     async def events_stream(request: Request):
-        return EventSourceResponse(event_stream(tracker, request.is_disconnected, consumer, presets))
+        return EventSourceResponse(event_stream(tracker, request.is_disconnected, consumer, presets, stop=stop))
 
     return app
 
@@ -157,8 +161,13 @@ async def event_stream(
     consumer: RedisConsumer | None = None,
     presets: list[list[str]] | None = None,
     interval: float = 1.0,
+    stop: asyncio.Event | None = None,
 ) -> AsyncIterator[dict]:
-    """Yield SSE events until the client goes away.
+    """Yield SSE events until the client goes away or ``stop`` is set.
+
+    Ending on ``stop`` is what lets a shutdown complete the response instead of
+    cancelling it: a cancelled stream is logged by uvicorn as "ASGI callable
+    returned without completing response", once per open stream (#105).
 
     Kept out of the route so it can be driven directly in tests — httpx's
     ASGITransport buffers the whole response, so an endless generator behind it
@@ -168,7 +177,7 @@ async def event_stream(
     last_version = 0
     last_streams: list[str] | None = None
     while True:
-        if await is_disconnected():
+        if (stop is not None and stop.is_set()) or await is_disconnected():
             break
         current = tracker.version
         if current != last_version:
@@ -191,7 +200,13 @@ async def event_stream(
                     "event": "streams-update",
                     "data": _render_streams_control(consumer, presets),
                 }
-        await asyncio.sleep(interval)
+        if stop is None:
+            await asyncio.sleep(interval)
+            continue
+        try:
+            await asyncio.wait_for(stop.wait(), interval)
+        except TimeoutError:
+            pass
 
 
 CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocomplete="off">
