@@ -12,6 +12,7 @@ their own geometry — `7x13.bdf` advances 7px per character, so five of them ar
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,7 @@ from led_catcher.display.bdf import (
     clear_metrics_cache,
     load_metrics,
 )
-from led_catcher.display.modes import _scroll_text, _static_text
+from led_catcher.display.modes import SCROLL_FRAME_SECONDS, _scroll_text, _static_text
 from led_catcher.profile import DisplayConfig
 
 FONTS = Path(__file__).resolve().parent.parent / "fonts"
@@ -163,6 +164,37 @@ def test_the_scroll_length_follows_the_font_rather_than_the_character_count():
         "the same text in a wider font has to scroll further — with the old "
         "6px/char estimate both ran for exactly the same number of frames"
     )
+
+
+def test_the_scroll_wait_is_reduced_by_the_time_spent_drawing():
+    """A flat 30 ms wait came on top of the draw: ~19 % slow on the Pi (#108)."""
+    draw_cost = 0.01
+
+    class SlowMatrix(FakeMatrix):
+        def swap(self) -> None:
+            time.sleep(draw_cost)
+            super().swap()
+
+    waits: list[float] = []
+    config = DisplayConfig(kind="text", text="HI", duration=0.0, color=(255, 0, 0), font="6x10.bdf")
+    _scroll_text(SlowMatrix(), config, lambda seconds, hold=False: waits.append(seconds))
+
+    assert waits, "the scroll waited between frames"
+    assert waits[0] == pytest.approx(SCROLL_FRAME_SECONDS - draw_cost, abs=0.005)
+    assert all(0 <= seconds < SCROLL_FRAME_SECONDS for seconds in waits)
+
+
+def test_a_frame_slower_than_the_period_never_waits_a_negative_time():
+    class TooSlow(FakeMatrix):
+        def swap(self) -> None:
+            time.sleep(SCROLL_FRAME_SECONDS + 0.01)
+            super().swap()
+
+    waits: list[float] = []
+    config = DisplayConfig(kind="text", text="I", duration=0.0, color=(255, 0, 0), font="4x6.bdf")
+    _scroll_text(TooSlow(width=2), config, lambda seconds, hold=False: waits.append(seconds))
+
+    assert waits and all(seconds == 0.0 for seconds in waits)
 
 
 @pytest.mark.parametrize(("font", "baseline"), [("4x6.bdf", 34), ("6x10.bdf", 35), ("7x13.bdf", 36)])

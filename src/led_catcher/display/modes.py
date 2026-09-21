@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 # Font used when a profile references a font that cannot be found.
 DEFAULT_FONT = "6x10.bdf"
 
+# One scroll step: 1px every 30 ms, ~33 fps.
+SCROLL_FRAME_SECONDS = 0.03
+
 # src/led_catcher — the installed package itself
 _PACKAGE_DIR = Path(__file__).resolve().parent.parent
 # Repo root when running from the src/ layout (editable install or checkout)
@@ -171,10 +174,14 @@ def _scroll_text(matrix, config, wait=_sleep, loops: int = 1) -> None:
     for _ in range(loops):
         x = start_x
         while x > end_x:
+            drawn_at = time.monotonic()
             matrix.clear()
             matrix.draw_text(font_path, x, baseline, color, text)
             matrix.swap()
-            wait(0.03)  # ~30fps
+            # The frame period less what drawing it already spent, as the GIF
+            # loop does (#71). A flat wait came on top of the draw and swap,
+            # ~5.5 ms a frame on a Pi 3B+, so every scroll ran ~19 % long (#108).
+            wait(max(0.0, SCROLL_FRAME_SECONDS - (time.monotonic() - drawn_at)))
             x -= 1
 
     matrix.clear()
