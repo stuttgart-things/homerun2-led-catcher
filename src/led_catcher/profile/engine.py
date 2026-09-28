@@ -256,5 +256,7 @@ def _localtime_filter(value: str, fmt: str = CARD_TIME_FORMAT) -> str:
 
 # One environment for every rule. jinja2.Template() used a shared default
 # environment with these same settings; this one only adds the filter.
-_JINJA = jinja2.Environment()
+# Not autoescaped: the output is pixels on the panel, not HTML — escaping would
+# put "&amp;" on the matrix. The simulator escapes what it puts in the page.
+_JINJA = jinja2.Environment(autoescape=False)  # nosec B701 - renders panel text, not HTML
 _JINJA.filters["localtime"] = _localtime_filter
