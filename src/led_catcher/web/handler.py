@@ -22,12 +22,15 @@ def create_web_handler(profile: Profile, tracker: EventTracker):
         duration = 5.0
         hold = False
         text = font = image = ""
+        card = None
         if config is not None:
             color = config.color
             kind = config.kind
             duration = config.duration
             hold = config.hold
             text, font, image = config.text, config.font, config.image
+            if kind.lower() == "card":
+                card = _card_json(config)
         else:
             # No rule matched. Falling back to a fixed info blue made an
             # unmatched CRITICAL indistinguishable from an INFO in the
@@ -55,9 +58,23 @@ def create_web_handler(profile: Profile, tracker: EventTracker):
             text=text,
             font=font or "6x10.bdf",
             image=image,
+            card=card,
             matched=config is not None,
         )
         tracker.record(event)
         logger.debug("web event recorded: %s %s", msg.message.system, msg.message.severity)
 
     return web_handler
+
+
+def _card_json(config) -> dict | None:
+    """The card as the panel lays it out, for the canvas."""
+    from led_catcher.display.card import card_layout, content_of
+    from led_catcher.web.preview import PANEL_WIDTH
+
+    try:
+        return card_layout(content_of(config), config.color, PANEL_WIDTH).to_json()
+    except Exception:
+        # The simulator falls back to static text; the event is still recorded.
+        logger.exception("cannot lay out card for the simulator")
+        return None

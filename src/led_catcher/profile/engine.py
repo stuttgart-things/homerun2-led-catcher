@@ -7,12 +7,15 @@ using YAML profiles with first-match semantics.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 import jinja2
 import yaml
 
+from led_catcher.display.card import CardContent, strip_title_prefix
 from led_catcher.models import Message
 
 logger = logging.getLogger(__name__)
@@ -31,7 +34,7 @@ DEFAULT_COLORS: dict[str, tuple[int, int, int]] = {
 class DisplayConfig:
     """Configuration for how to display a matched message."""
 
-    kind: str = "text"  # static, text, ticker, image, gif
+    kind: str = "text"  # static, text, ticker, image, gif, score, card
     text: str = ""
     image: str = ""
     font: str = "6x10.bdf"
@@ -42,9 +45,15 @@ class DisplayConfig:
     # each one. A held display is by definition pre-emptible — that is what
     # "until replaced" means — while a finite duration gets its time.
     #
-    # Only the still modes honour it (static, image). The animated ones run
-    # for as long as their animation takes; see docs/profile-reference.md.
+    # Only the still modes honour it (static, image, score) and the card. The
+    # animated ones run for as long as their animation takes; see
+    # docs/profile-reference.md.
     hold: bool = False
+    # card only: drop a leading "[SEVERITY]" and system name from the title,
+    # which the card's header bar already shows.
+    strip_prefix: bool = False
+    # card only: what the card shows, filled in when a message is matched.
+    card: CardContent | None = None
     color: tuple[int, int, int] = (255, 255, 255)
     systems: list[str] = field(default_factory=list)
     severity: list[str] = field(default_factory=list)
@@ -105,6 +114,7 @@ def load_profile(path: str | Path, rules_expected: bool = True) -> Profile:
             font=rule_data.get("font", "6x10.bdf"),
             duration=float(rule_data.get("duration", 5)),
             hold=bool(rule_data.get("hold", False)),
+            strip_prefix=bool(rule_data.get("strip_prefix", False)),
             systems=rule_data.get("systems", []),
             severity=severity_list,
         )
@@ -152,6 +162,7 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
         font=config.font,
         duration=config.duration,
         hold=config.hold,
+        strip_prefix=config.strip_prefix,
         systems=config.systems,
         severity=config.severity,
     )
@@ -159,7 +170,7 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
     # Render Jinja2 text template
     if resolved.text:
         try:
-            template = jinja2.Template(resolved.text)
+            template = _JINJA.from_string(resolved.text)
             resolved.text = template.render(
                 title=msg.title,
                 message=msg.message,
@@ -168,6 +179,7 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
                 author=msg.author,
                 tags=msg.tags,
                 url=msg.url,
+                timestamp=msg.timestamp,
             )
         except jinja2.TemplateError:
             logger.exception("failed to render template for text: %s", resolved.text)
@@ -176,4 +188,73 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
     severity_key = msg.severity.lower()
     resolved.color = profile.colors.get(severity_key, DEFAULT_COLORS.get(severity_key, (255, 255, 255)))
 
+    if resolved.kind.lower() == "card":
+        # The rule's text, when it has one, is the card's scrolling line; the
+        # message body otherwise.
+        if not config.text:
+            resolved.text = msg.message
+        title = msg.title or msg.message
+        if resolved.strip_prefix:
+            title = strip_title_prefix(title, msg.severity, msg.system)
+        resolved.card = CardContent(
+            system=msg.system,
+            title=title,
+            message=resolved.text,
+            author=msg.author,
+            # The time the event happened, per its producer. A message without
+            # a usable timestamp shows when the catcher received it instead:
+            # an alert card with no time reads as a stale one.
+            time=format_time(msg.timestamp) or datetime.now().strftime(CARD_TIME_FORMAT),
+            tags=msg.tags,
+        )
+
     return resolved
+
+
+# ----------------------------------------------------------------- timestamps
+
+CARD_TIME_FORMAT = "%H:%M"
+
+# More than six fractional digits (Go's RFC3339Nano) is more than
+# datetime.fromisoformat takes before Python 3.12.
+_FRACTION = re.compile(r"(\.\d{6})\d+")
+
+
+def parse_timestamp(value: str) -> datetime | None:
+    """An RFC 3339 / ISO 8601 timestamp as an aware local datetime, or None.
+
+    A timestamp without an offset is taken as local time. Local means the
+    catcher's: the TZ environment variable, or the host's zone.
+    """
+    if not value or not value.strip():
+        return None
+    text = value.strip()
+    if text[-1] in "Zz":
+        text = text[:-1] + "+00:00"
+    text = _FRACTION.sub(r"\1", text)
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed.astimezone()
+
+
+def format_time(value: str, fmt: str = CARD_TIME_FORMAT) -> str:
+    """``value`` (RFC 3339) in local time as ``fmt``; empty when unparseable."""
+    parsed = parse_timestamp(value)
+    return parsed.strftime(fmt) if parsed is not None else ""
+
+
+def _localtime_filter(value: str, fmt: str = CARD_TIME_FORMAT) -> str:
+    """Jinja filter: ``{{ timestamp | localtime }}`` → ``14:05``.
+
+    An unparseable value is passed through as it is: in a template the raw
+    string says more than nothing does.
+    """
+    return format_time(str(value or ""), fmt) or str(value or "")
+
+
+# One environment for every rule. jinja2.Template() used a shared default
+# environment with these same settings; this one only adds the filter.
+_JINJA = jinja2.Environment()
+_JINJA.filters["localtime"] = _localtime_filter

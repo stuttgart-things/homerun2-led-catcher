@@ -17,7 +17,7 @@ from led_catcher.models import CaughtMessage, Message
 from led_catcher.profile import DisplayConfig, Profile
 from led_catcher.web import EventTracker, create_web_app, create_web_handler
 
-FONTS = ["4x6.bdf", "6x10.bdf", "7x13.bdf"]
+FONTS = ["4x6.bdf", "5x7.bdf", "6x10.bdf", "7x13.bdf"]
 
 
 def client() -> AsyncClient:

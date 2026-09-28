@@ -42,7 +42,7 @@ IDLE_SCREEN_POLL_SECONDS = 0.25
 
 # The modes that can hold the panel. The animated ones run for as long as their
 # animation takes, whatever `hold` says (docs/profile-reference.md).
-HOLDING_KINDS = frozenset({"static", "image", "score"})
+HOLDING_KINDS = frozenset({"static", "image", "score", "card"})
 
 # Submitted by blank(): not a display, an instruction to leave the panel dark.
 _BLANK = object()
@@ -273,19 +273,27 @@ class DisplayWorker:
         with self._lock:
             self._showing = showing
 
-    def _wait(self, seconds: float, hold: bool = False) -> None:
+    def _wait(self, seconds: float, hold: bool = False, frame: bool = False) -> bool:
         """Wait out a display.
 
         A held display waits for a replacement, however long that takes. A
         finite one gets its full time and is not cut short by an arriving
         message — only by shutdown, or by blank(), which unwinds the mode.
+
+        With ``frame``, a held display waits one animation frame of
+        ``seconds`` and returns True if a replacement (or blank(), or shutdown)
+        arrived meanwhile — so a held card keeps its ticker moving and still
+        gives way at once.
         """
+        if hold and frame:
+            return self._wake.wait(timeout=seconds)
         if hold:
             self._wake.wait()
-            return
+            return True
         self._cut.wait(timeout=seconds)
         if self._cut.is_set() and not self._stopping.is_set():
             raise _Interrupted
+        return False
 
     def _blank(self) -> None:
         try:
