@@ -141,6 +141,8 @@ def create_web_app(
                 "text": e.text,
                 "font": e.font,
                 "image": e.image,
+                # kind 'card': the panel's layout, drawn as is by the canvas.
+                "card": e.card,
                 "matched": e.matched,
                 "at": e.at,
                 "id": e.id,

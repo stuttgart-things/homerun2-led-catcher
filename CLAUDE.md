@@ -76,7 +76,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `handlers/` | Log handler, LED handler, health endpoint, `/streams` control endpoint, `/display` API |
 | `models/` | Message and CaughtMessage dataclasses |
 | `config/` | Env var loading, logging setup |
-| `display/` | LED matrix display modes (static, scroll, ticker, image, GIF) |
+| `display/` | LED matrix display modes (static, scroll, ticker, image, GIF, score, card) |
 | `profile/` | YAML profile loading + rule matching |
 | `web/` | HTMX simulator with SSE, incl. the header stream control and the Panel control form |
 | `tools/` | Operator CLI: `led-catcher-publish` test producer |
@@ -99,6 +99,8 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/profile/engine.py` — YAML profile loading, rule matching, Jinja2 templating
 - `src/led_catcher/display/matrix.py` — rpi-rgb-led-matrix wrapper (no-op fallback)
 - `src/led_catcher/display/modes.py` — display mode implementations, asset lookup
+- `src/led_catcher/display/card.py` — the `card` mode: a whole event on 64x64; its layout is also sent to the simulator as data
+- `src/led_catcher/display/offscreen.py` — a matrix that draws into a PIL image; `hack/render_card.py` renders a card to PNG
 - `src/led_catcher/display/clock.py` — the idle screen: clock texts, layout, drawing; the canvas mirrors it
 - `src/led_catcher/tools/publish.py` — `led-catcher-publish` test message producer
 - `dagger/main.go` — Dagger CI module (delegates to stuttgart-things/dagger/python)

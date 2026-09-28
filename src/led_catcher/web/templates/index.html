@@ -776,7 +776,7 @@
         // telling the truth.
         const SCROLL_STEP_MS = 30;   // modes._scroll_text: wait(0.03) per 1px
         const TICKER_LOOPS = 3;      // modes._ticker_text
-        const HOLDING_KINDS = ['static', 'image', 'score'];
+        const HOLDING_KINDS = ['static', 'image', 'score', 'card'];
         // display/clock.py: fonts, gaps between the lines, the dimming, and the
         // colon and periods set as pixels ([dx, dy] from cell edge and baseline).
         const CLOCK = { timeFont: '10x20.bdf', dateFont: '6x10.bdf', timeGap: 0, dateGap: 1, dim: 0.6 };
@@ -957,6 +957,7 @@
                 case 'image': return showImage(ev, token);
                 case 'gif': return showGif(ev, token);
                 case 'score': return showScore(ev, token);
+                case 'card': return showCard(ev, token);
                 default: return staticText(ev, token);   // 'static', and unknown kinds
             }
         }
@@ -1103,6 +1104,59 @@
             drawScore(score);
             await wait(token, ev.duration, ev.hold);
             if (ev.hold) return;
+            clearMatrix();
+        }
+
+        // ---- the card: display/card.py ----
+        // The layout arrives computed by the panel's own card_layout (ev.card,
+        // CardLayout.to_json): fills, lines and the ticker line. Only the
+        // ticker's movement is mirrored here — display_card and next_ticker_x.
+        const CARD_TEXT_X = 1;
+        async function showCard(ev, token) {
+            const card = ev.card;
+            if (!card) return staticText(ev, token);
+            const lines = card.lines.filter(l => l.text);
+            const fonts = await guard(token, Promise.all(lines.map(l => loadText(l.font, l.text))));
+            const t = card.ticker;
+            const tf = t.text ? await guard(token, loadText(t.font, t.text)) : null;
+            const frame = (x) => {
+                clearMatrix();
+                for (const [fx, fy, fw, fh, c] of card.fills) {
+                    for (let y = fy; y < Math.min(fy + fh, GRID); y++) {
+                        for (let px = fx; px < Math.min(fx + fw, GRID); px++) setDot(px, y, c[0], c[1], c[2]);
+                    }
+                }
+                lines.forEach((l, i) => drawText(fonts[i], l.x, l.baseline, l.color, l.text));
+                if (tf) drawText(tf, x, t.baseline, t.color, t.text);
+            };
+            if (!card.scrolls) {
+                frame(CARD_TEXT_X);
+                await wait(token, ev.duration, ev.hold);
+                if (ev.hold) return;
+                clearMatrix();
+                return;
+            }
+            let x = CARD_TEXT_X, scheduled = 0;
+            const start = performance.now();
+            for (;;) {
+                const drawnAt = performance.now();
+                frame(x);
+                x -= 1;
+                if (x <= -t.width) x = GRID;
+                const pause = Math.max(0, SCROLL_STEP_MS - (performance.now() - drawnAt));
+                if (ev.hold) {
+                    // A held card keeps scrolling and gives way to the next
+                    // display at once (DisplayWorker._wait with frame=True).
+                    current.held = true;
+                    if (pending) throw new Cancelled();
+                    await sleep(token, pause);
+                    continue;
+                }
+                scheduled += SCROLL_STEP_MS / 1000;
+                const elapsed = (performance.now() - start) / 1000;
+                if (scheduled >= ev.duration || elapsed >= ev.duration) break;
+                await sleep(token, Math.min(pause, (ev.duration - elapsed) * 1000));
+            }
             clearMatrix();
         }
 

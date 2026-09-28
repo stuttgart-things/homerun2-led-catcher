@@ -31,6 +31,9 @@ class LedEvent:
     text: str = ""
     font: str = "6x10.bdf"
     image: str = ""
+    # kind 'card': the laid-out card (display.card.CardLayout.to_json), so the
+    # canvas draws the panel's lines at the panel's places.
+    card: dict | None = None
     # False when no rule matched: the panel shows nothing for it, and neither
     # should the canvas. The timeline still lists it.
     matched: bool = True

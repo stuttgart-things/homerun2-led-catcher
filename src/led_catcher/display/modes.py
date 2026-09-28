@@ -1,7 +1,7 @@
 """Display modes for the LED matrix.
 
 Routes DisplayConfig to the correct rendering function:
-static, text (scroll), ticker, image, gif, score.
+static, text (scroll), ticker, image, gif, score, card.
 
 Waiting is injected rather than called directly. A display is mostly spent
 waiting, and who gets to interrupt that wait is the display worker's business,
@@ -82,6 +82,10 @@ def display_event(matrix, config, wait=None) -> None:
     defaults to a plain sleep, which is right for a direct call in a test or a
     one-shot render; the display worker passes one that a replacement message
     can interrupt.
+
+    `wait(seconds, True, frame=True)` is one frame of a held animation (the
+    card's ticker): it waits at most `seconds` and returns True once the
+    display should end because something replaced it.
     """
     if wait is None:
         wait = _sleep
@@ -94,6 +98,7 @@ def display_event(matrix, config, wait=None) -> None:
         "image": _show_image,
         "gif": _show_gif,
         "score": _score_board,
+        "card": _card,
     }
     handler = handlers.get(kind)
     if handler is None:
@@ -103,16 +108,18 @@ def display_event(matrix, config, wait=None) -> None:
     handler(matrix, config, wait)
 
 
-def _sleep(seconds: float, hold: bool = False) -> None:
+def _sleep(seconds: float, hold: bool = False, frame: bool = False) -> bool:
     """The default wait: sleep, and treat hold as "stay up indefinitely".
 
     Without a worker to deliver a replacement, a held display has nothing to
     wait for, so it returns immediately and leaves the panel lit. That is the
-    honest behaviour for a direct call — blocking forever would not be.
+    honest behaviour for a direct call — blocking forever would not be. For a
+    held animation's frame that means True: end here, one frame drawn.
     """
     if hold:
-        return
+        return True
     time.sleep(seconds)
+    return False
 
 
 def _static_text(matrix, config, wait=_sleep) -> None:
@@ -325,3 +332,10 @@ def _score_board(matrix, config, wait=_sleep) -> None:
     from led_catcher.display.score import display_score
 
     display_score(matrix, config, wait)
+
+
+def _card(matrix, config, wait=_sleep) -> None:
+    """A whole event on the panel — see led_catcher.display.card."""
+    from led_catcher.display.card import display_card
+
+    display_card(matrix, config, wait)
