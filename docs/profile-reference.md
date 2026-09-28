@@ -11,12 +11,13 @@ displayRules:
   <rule-name>:
     systems: [<system1>, <system2>, ...]  # or ["*"] for wildcard
     severity: [<severity1>, ...]           # ERROR, CRITICAL, WARNING, INFO, SUCCESS, DEBUG
-    kind: <display-mode>                   # static, text, ticker, image, gif
-    text: "<jinja2-template>"              # for text modes
+    kind: <display-mode>                   # static, text, ticker, image, gif, score, card
+    text: "<jinja2-template>"              # for text modes; card: the scrolling line
     image: "<filename>"                    # for image/gif modes
-    font: "<font-file>"                    # BDF font file
+    font: "<font-file>"                    # BDF font file (not used by score, card)
     duration: <seconds>                    # display duration
     hold: <true|false>                     # keep it up until replaced
+    strip_prefix: <true|false>             # card: drop "[SEVERITY] system" from the title
 
 colors:
   error: [255, 0, 0]
@@ -41,10 +42,94 @@ not a default.
 | `image` | Static PNG/JPG, scaled to 64x64 | `image`, `duration` | yes |
 | `gif` | Animated GIF playback | `image`, `duration` | no |
 | `score` | Table tennis scoreboard | `text` | yes |
+| `card` | The whole event: system, title, message, author, time | none | yes |
 
 `duration` does not apply to `text` and `ticker`: a scroll lasts as long as the
 scroll takes, which follows from the length of the text. Setting it on those
-modes has no effect.
+modes has no effect. It does apply to `card`, whose message keeps scrolling for
+exactly that long.
+
+### `card`
+
+One line of text is enough for a headline and too little for an alert. A card
+puts the whole event on the panel at once:
+
+```
+ y  0- 7   header bar in the severity colour, system name in 4x6, dark
+ y 10-33   title, word-wrapped: 5x7 on 3 lines (12 chars each),
+           or 4x6 on 4 lines (16 chars each) when it does not fit in 5x7
+ y 36-45   message in 6x10, in the severity colour, scrolling
+ y 48-53   tags in 4x6, dimmed — only when the message has tags
+ y 55      divider, dimmed
+ y 58-63   footer in 4x6, dimmed: author left, HH:MM right
+```
+
+```
++----------------------------------------------------------------+
+|PROMETHEUS##########(severity colour)###########################|  0-7
+|                                                                |
+|pod crash                                                       |  10-16
+|loop                                                            |  18-24
+|detected                                                        |  26-32
+|                                                                |
+|pod prometheus-0 restarted 5 times in  <-- scrolls              |  36-45
+|                                                                |
+|k8s monitoring                                                  |  48-53
+|----------------------------------------------------------------|  55
+|ops-bot                                                    14:34|  58-63
++----------------------------------------------------------------+
+```
+
+- **Title**: the message title, or the message body when there is no title.
+  It gets the larger 5x7 font when all of it fits on three lines, and 4x6 on
+  four lines otherwise. What still does not fit ends in an ellipsis (`…`), and
+  a word longer than a line is broken where it has to be.
+- **`strip_prefix: true`** drops a leading `[SEVERITY]` (`[ERROR]`,
+  `[warning]`, …) and then a leading system name from the title, so
+  `[ERROR] prometheus pod crash loop detected` from system `prometheus` is
+  shown as `pod crash loop detected`: the header already says both, and the
+  panel is too narrow to say them twice. Only the message's own system name is
+  stripped, as a whole word, and a title that would be left empty is kept.
+- **Scrolling line**: the message body, or the rule's `text` rendered as a
+  template when the rule has one. It scrolls at the same 1px / 30 ms as
+  `text`, starting readable at the left edge and re-entering from the right,
+  for the whole `duration`. A message that fits the panel (up to 10
+  characters) stands still. At 30 ms a pixel, a pass of a message takes about
+  0.18 s a character plus 2 s, so give long messages a long enough `duration`
+  — the card ends when the duration does, not when the pass does.
+- **Time**: the message's `timestamp` (RFC 3339) in the catcher's local time
+  — the `TZ` environment variable, or the host's zone. A message without a
+  usable timestamp shows when the catcher received it.
+- **`hold: true`** keeps the card up until the next display replaces it, the
+  message still scrolling; a replacement takes over at once.
+- **Colour**: only the header bar and the scrolling line take the severity
+  colour. The title is near-white and the rest dimmed, so the colour says
+  "what kind of event" and the text stays readable.
+- `font` is ignored: the layout is fixed, like the scoreboard's, and drawn for
+  a 64x64 panel. Other sizes are warned about and get the same rows from the
+  top.
+
+```yaml
+error-all:
+  systems: ["*"]
+  severity: [ERROR, CRITICAL]
+  kind: card
+  strip_prefix: true
+  duration: 10
+```
+
+`hack/render_card.py` renders a card to a PNG without a panel, through the
+same rule matching and drawing code:
+
+```bash
+python hack/render_card.py --out card.png
+python hack/render_card.py --severity warning --system argocd \
+  --title "[WARNING] argocd app out of sync" --message "homerun2-dev OutOfSync" --out warn.png
+```
+
+The simulator draws cards from the layout the panel computes, so the two agree
+to the pixel. The `/display` API does not offer `card`: a card is built from a
+message's fields, which a `POST /display` body does not have.
 
 ### `score`
 
@@ -175,6 +260,16 @@ Text fields support Jinja2 templating with these variables:
 | `{{ author }}` | Message author |
 | `{{ tags }}` | Tags string |
 | `{{ url }}` | Associated URL |
+| `{{ timestamp }}` | When the event happened, as the producer sent it (RFC 3339) |
+
+The `localtime` filter turns a timestamp into the catcher's local time
+(`TZ`), `HH:MM` unless given a `strftime` format. A value it cannot parse is
+passed through unchanged.
+
+```yaml
+text: "{{ system }} {{ timestamp | localtime }}: {{ title }}"   # prometheus 14:34: ...
+text: "{{ timestamp | localtime('%d.%m. %H:%M') }}"             # 28.09. 14:34
+```
 
 ## Example Profile
 
@@ -206,10 +301,9 @@ displayRules:
   error-all:
     systems: ["*"]
     severity: [ERROR, CRITICAL]
-    kind: text
-    text: "{{ system }}: {{ title }}"
-    font: 6x10.bdf
-    duration: 5
+    kind: card
+    strip_prefix: true
+    duration: 10
 
   default-info:
     systems: ["*"]

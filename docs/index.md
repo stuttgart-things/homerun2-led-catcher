@@ -8,7 +8,7 @@ Shows homerun2 notifications from Redis Streams on a 64x64 RGB LED matrix. The p
 
 - **Redis Streams consumer** with consumer groups (same pattern as core-catcher, light-catcher)
 - **Profile-based display routing** — YAML rules map (system, severity) to display modes
-- **6 display modes** — static text, scrolling text, ticker, image, animated GIF, table-tennis scoreboard
+- **7 display modes** — static text, scrolling text, ticker, image, animated GIF, table-tennis scoreboard, event card
 - **`/display` API** — put anything on the panel with `curl`, no Redis needed ([Testing with curl](testing-with-curl.md))
 - **HTMX web simulator** — 64x64 canvas that draws what the panel draws (same fonts, frames and timing), with real-time SSE updates
 - **Configurable modes** — `led` (hardware), `web` (simulator), `full` (both), `standalone` (panel + simulator driven by the API, no Redis)

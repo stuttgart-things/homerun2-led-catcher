@@ -8,6 +8,7 @@ BDF bitmap fonts for the LED matrix. `graphics.Font().LoadFont()` from
 | Font | Cell size | Use |
 |------|-----------|-----|
 | `4x6.bdf` | 4x6 px | longest lines, ~16 chars visible on a 64px panel |
+| `5x7.bdf` | 5x7 px | the `card` title: 12 chars a line, three lines, readable at a distance |
 | `6x10.bdf` | 6x10 px | default, good balance of size and readability |
 | `7x13.bdf` | 7x13 px | headlines, short status words |
 | `10x20.bdf` | 10x20 px | the idle clock's time (`LED_IDLE=clock`); five characters fill 50 of 64 columns |

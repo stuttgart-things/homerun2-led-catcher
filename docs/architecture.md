@@ -31,7 +31,7 @@ DELETE /display ─────────────────────�
                                               display modes ──► MatrixDisplay ──► panel
                                               static, text,     (rpi-rgb-led-matrix,
                                               ticker, image,     no-op without it)
-                                              gif, score
+                                              gif, score, card
 
 EventTracker ──► SSE /api/events/stream ──► browser: timeline + canvas
                                              canvas draws with the panel's inputs:
@@ -52,7 +52,7 @@ in the simulator.
 | `models/` | `Message` and `CaughtMessage` dataclasses |
 | `config/` | Environment variable loading (`Config`, `PanelConfig`, `ApiConfig`), JSON log formatter |
 | `profile/` | YAML profile loading, first-match rule matching, Jinja2 templating, severity colours |
-| `display/` | `worker.py` (the thread that owns the panel), `modes.py` (display modes), `matrix.py` (rpi-rgb-led-matrix wrapper), `bdf.py` (font metrics and glyphs), `frames.py` (prepared image/GIF frames), `score.py` (scoreboard) |
+| `display/` | `worker.py` (the thread that owns the panel), `modes.py` (display modes), `matrix.py` (rpi-rgb-led-matrix wrapper), `bdf.py` (font metrics and glyphs), `frames.py` (prepared image/GIF frames), `score.py` (scoreboard), `card.py` (a whole event on one panel), `offscreen.py` (a matrix that draws into an image) |
 | `web/` | FastAPI HTMX simulator, SSE, `EventTracker`, `web_handler`, preview routes for the canvas, Panel control form |
 | `tools/` | `led-catcher-publish`: test producer that writes into the stream like the pitchers do |
 

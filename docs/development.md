@@ -107,11 +107,13 @@ src/led_catcher/
 │   └── engine.py          # YAML rules, Jinja2, severity colours
 ├── display/
 │   ├── worker.py          # the thread that owns the panel, newest wins
-│   ├── modes.py           # static, text, ticker, image, gif, score; asset lookup
+│   ├── modes.py           # static, text, ticker, image, gif, score, card; asset lookup
 │   ├── matrix.py          # rpi-rgb-led-matrix wrapper (no-op without it)
 │   ├── bdf.py             # BDF font metrics and glyph bitmaps
 │   ├── frames.py          # image/GIF frames prepared once per file
-│   └── score.py           # table-tennis scoreboard
+│   ├── score.py           # table-tennis scoreboard
+│   ├── card.py            # card: header, wrapped title, ticker, footer
+│   └── offscreen.py       # a matrix drawing into a PIL image (tests, hack/render_card.py)
 ├── web/
 │   ├── app.py             # FastAPI HTMX simulator, SSE, /ui/streams
 │   ├── events.py          # EventTracker ring buffer
