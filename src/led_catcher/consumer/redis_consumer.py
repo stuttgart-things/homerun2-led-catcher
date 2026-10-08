@@ -132,16 +132,24 @@ class RedisConsumer:
         return self._client
 
     async def _ensure_group(self, client: aioredis.Redis, streams: list[str]) -> None:
+        """Create the consumer group on each stream that lacks it.
+
+        A new group starts at ``CONSUMER_START_ID`` (default ``$``): it used to
+        start at ``0`` and replayed the whole stream onto the panel, e.g. the
+        thousands of entries in a long-lived ``alerts`` stream (#123). An
+        existing group keeps its position.
+        """
         group = self._cfg.consumer_group
+        start_id = self._cfg.consumer_start_id
         for stream in streams:
             try:
                 groups = await client.xinfo_groups(stream)
                 if not any(g["name"] == group for g in groups):
-                    await client.xgroup_create(stream, group, id="0", mkstream=True)
-                    logger.info("created consumer group %s on stream %s", group, stream)
+                    await client.xgroup_create(stream, group, id=start_id, mkstream=True)
+                    logger.info("created consumer group %s on stream %s at %s", group, stream, start_id)
             except aioredis.ResponseError:
-                await client.xgroup_create(stream, group, id="0", mkstream=True)
-                logger.info("created consumer group %s on stream %s (new stream)", group, stream)
+                await client.xgroup_create(stream, group, id=start_id, mkstream=True)
+                logger.info("created consumer group %s on stream %s at %s (new stream)", group, stream, start_id)
 
     async def set_streams(self, streams: list[str], skip_backlog: bool = True) -> dict:
         """Replace the subscribed stream set.
@@ -304,6 +312,11 @@ class RedisConsumer:
         entry_id: str,
         fields: dict,
     ) -> None:
+        if self._too_old(entry_id):
+            logger.info("skipped entry older than MAX_MESSAGE_AGE", extra={"stream": stream, "stream_id": entry_id})
+            await client.xack(stream, group, entry_id)
+            return
+
         message_id = fields.get("messageID", "")
         if not message_id:
             logger.warning("stream entry %s has no messageID field", entry_id)
@@ -329,6 +342,22 @@ class RedisConsumer:
                 logger.exception("handler error")
 
         await client.xack(stream, group, entry_id)
+
+    def _too_old(self, entry_id: str) -> bool:
+        """True when the entry is older than ``MAX_MESSAGE_AGE`` (0 = never).
+
+        The age comes from the stream ID's millisecond part, i.e. when Redis
+        added the entry, so a backlog that built up while the catcher was down
+        is acknowledged instead of shown, as in light-catcher (#123).
+        """
+        max_age = self._cfg.max_message_age
+        if max_age <= 0:
+            return False
+        try:
+            added_ms = int(entry_id.split("-", 1)[0])
+        except ValueError:
+            return False
+        return time.time() - added_ms / 1000 > max_age
 
     async def shutdown(self) -> None:
         if self._state != "failed":

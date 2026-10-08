@@ -12,6 +12,9 @@ from dataclasses import dataclass, field
 DEFAULT_REDIS_STARTUP_TIMEOUT = 120.0
 """Seconds the consumer retries Redis at startup before the process exits (#65)."""
 
+DEFAULT_MAX_MESSAGE_AGE = 60.0
+"""Entries older than this are acknowledged unshown, as in light-catcher (#123)."""
+
 LED_MODES = ("led", "web", "full", "standalone")
 """`standalone` drives the panel from the /display API alone — no Redis (#80)."""
 
@@ -85,6 +88,8 @@ class Config:
     api: ApiConfig = field(default_factory=ApiConfig)
     consumer_group: str = "homerun2-led-catcher"
     consumer_name: str = ""
+    consumer_start_id: str = "$"  # where a newly created group starts (#123)
+    max_message_age: float = DEFAULT_MAX_MESSAGE_AGE  # seconds, 0 = off (#123)
     led_mode: str = "full"  # led, web, full, standalone
     health_port: int = 8080
     profile_path: str = "profile.yaml"
@@ -280,6 +285,24 @@ def parse_redis_startup_timeout(raw: str) -> float:
     return seconds
 
 
+def parse_max_message_age(raw: str) -> float:
+    """``MAX_MESSAGE_AGE`` in seconds; unset means the default, ``0`` turns it off.
+
+    Like ``REDIS_STARTUP_TIMEOUT``, a typo fails startup instead of falling back.
+    """
+    if not raw.strip():
+        return DEFAULT_MAX_MESSAGE_AGE
+    if raw.strip() == "0":
+        return 0.0
+    try:
+        seconds = parse_duration(raw)
+    except ValueError as exc:
+        raise ValueError(f"MAX_MESSAGE_AGE {raw!r}: {exc}") from None
+    if seconds < 0:
+        raise ValueError(f"MAX_MESSAGE_AGE {raw!r}: must not be negative")
+    return seconds
+
+
 def load_config() -> Config:
     redis_cfg = RedisConfig(
         addr=_getenv("REDIS_ADDR", "localhost"),
@@ -298,6 +321,8 @@ def load_config() -> Config:
         api=load_api_config(),
         consumer_group=_getenv("CONSUMER_GROUP", "homerun2-led-catcher"),
         consumer_name=consumer_name,
+        consumer_start_id=_getenv("CONSUMER_START_ID", "").strip() or "$",
+        max_message_age=parse_max_message_age(_getenv("MAX_MESSAGE_AGE", "")),
         led_mode=_getenv("LED_MODE", "full"),
         health_port=int(_getenv("HEALTH_PORT", "8080")),
         profile_path=_getenv("PROFILE_PATH", "profile.yaml"),

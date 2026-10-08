@@ -146,6 +146,8 @@ All configuration is via environment variables:
 | `REDIS_STREAM` | `messages` | Single stream to consume (legacy; used when `REDIS_STREAMS` is unset) |
 | `CONSUMER_GROUP` | `homerun2-led-catcher` | Consumer group name |
 | `CONSUMER_NAME` | hostname | Consumer name within group |
+| `CONSUMER_START_ID` | `$` | Where a **newly created** consumer group starts. `$` skips what is already in the stream, `0` replays it. An existing group keeps its position |
+| `MAX_MESSAGE_AGE` | `60s` | Entries older than this (by stream ID) are acknowledged without being shown, e.g. a backlog that built up while the catcher was down. Go duration; `0` turns it off |
 | `REDIS_STARTUP_TIMEOUT` | `120s` | How long the consumer retries Redis at startup (Go duration: `90s`, `2m`). When it runs out the process exits non-zero; an invalid value fails startup; SIGTERM ends the wait |
 | `LED_MODE` | `full` | Operating mode: `led`, `web`, `full`, `standalone` (no Redis, driven by `/display`) |
 | `LED_API_TOKEN` | *(empty)* | Bearer token for `POST`/`DELETE /display`. Empty: the write endpoints are not registered |
