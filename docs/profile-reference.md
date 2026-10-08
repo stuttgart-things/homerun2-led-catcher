@@ -11,6 +11,7 @@ displayRules:
   <rule-name>:
     systems: [<system1>, <system2>, ...]  # or ["*"] for wildcard
     severity: [<severity1>, ...]           # ERROR, CRITICAL, WARNING, INFO, SUCCESS, DEBUG
+    tags: [<tag1>, ...]                    # optional; every one must be a whole element of the message's tags
     kind: <display-mode>                   # static, text, ticker, image, gif, score, card
     text: "<jinja2-template>"              # for text modes; card: the scrolling line
     image: "<filename>"                    # for image/gif modes
@@ -18,6 +19,13 @@ displayRules:
     duration: <seconds>                    # display duration
     hold: <true|false>                     # keep it up until replaced
     strip_prefix: <true|false>             # card: drop "[SEVERITY] system" from the title
+
+quietHours:                              # optional, see "Quiet hours"
+  from: "19:00"
+  to: "07:00"
+  weekends: true
+  timezone: Europe/Berlin
+  allow: [error, critical]
 
 colors:
   error: [255, 0, 0]
@@ -234,10 +242,16 @@ message on the panel never stops the catcher reading its streams or answering
 
 ## Rule Matching
 
-1. Rules are evaluated in order (first match wins)
-2. A rule matches if the message's system is in the rule's `systems` list (or `"*"`)
-3. AND the message's severity is in the rule's `severity` list
-4. If no rule matches, the message is not displayed on the matrix and is
+1. During quiet hours, a message whose severity is not in `quietHours.allow`
+   matches no rule (see below)
+2. Rules are evaluated in order (first match wins)
+3. A rule matches if the message's system is in the rule's `systems` list (or `"*"`)
+4. AND the message's severity is in the rule's `severity` list
+5. AND every entry of the rule's `tags` equals a whole element of the message's
+   comma-separated `tags` (`issue_comment` matches `github,issue_comment,org/repo`
+   but not `issue_comment_edited`). Case-sensitive, the same as light-catcher's
+   `tags`, so one profile reads the same on both catchers. No `tags`: no filter
+6. If no rule matches, the message is not displayed on the matrix and is
    logged at `info` level saying so. In the web simulator it is still recorded,
    coloured by its severity rather than rendered by a rule.
 
@@ -246,6 +260,27 @@ default had no rule for `ERROR` or `CRITICAL`: on the matrix those were dropped
 (logged at `debug`, invisible at the default `LOG_LEVEL`) and in the simulator
 they were recorded in the same blue as `INFO`. A failing alert looked exactly
 like a working one.
+
+## Quiet hours
+
+`quietHours` keeps the panel calm outside office hours: from `from` to `to`
+(it may cross midnight), and all of Saturday and Sunday with `weekends: true`,
+only the `allow` severities (default `error`, `critical`) are shown. Everything
+else matches no rule: it is not displayed, it is logged, and the web simulator
+still lists it like any unmatched message. The idle screen is unaffected.
+
+Times are `HH:MM` in `timezone` (an IANA name; unset means the host's local
+time). Quote them: unquoted, YAML reads `19:00` as the number 1140. The
+catcher reads that back as 19:00, but a quoted time says what it means.
+
+```yaml
+quietHours:
+  from: "19:00"
+  to: "07:00"
+  weekends: true
+  timezone: Europe/Berlin
+  allow: [error, critical]
+```
 
 ## Jinja2 Templates
 
