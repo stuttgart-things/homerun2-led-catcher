@@ -1,7 +1,8 @@
 """Profile/rules engine for display mode routing.
 
-Maps (system, severity) combinations to LED display configurations
-using YAML profiles with first-match semantics.
+Maps (system, severity, tags) combinations to LED display configurations
+using YAML profiles with first-match semantics, outside a profile's quiet
+hours.
 """
 
 from __future__ import annotations
@@ -9,8 +10,9 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, time
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import jinja2
 import yaml
@@ -57,6 +59,42 @@ class DisplayConfig:
     color: tuple[int, int, int] = (255, 255, 255)
     systems: list[str] = field(default_factory=list)
     severity: list[str] = field(default_factory=list)
+    # Every listed tag must equal a whole element of the message's
+    # comma-separated tags, as in light-catcher (#125). Empty: no filter.
+    tags: list[str] = field(default_factory=list)
+
+
+@dataclass
+class QuietHours:
+    """When only the `allow` severities reach the panel (#126).
+
+    `start` to `end` may cross midnight (19:00 to 07:00); `weekends` makes
+    Saturday and Sunday quiet all day. Times are in `timezone`.
+    """
+
+    start: time
+    end: time
+    weekends: bool = False
+    timezone: str = ""
+    allow: list[str] = field(default_factory=lambda: ["error", "critical"])
+
+    def active(self, now: datetime | None = None) -> bool:
+        local = (now or datetime.now(self._zone())).astimezone(self._zone())
+        if self.weekends and local.weekday() >= 5:
+            return True
+        t = local.time()
+        if self.start <= self.end:
+            return self.start <= t < self.end
+        return t >= self.start or t < self.end
+
+    def _zone(self):
+        if not self.timezone:
+            return None
+        try:
+            return ZoneInfo(self.timezone)
+        except ZoneInfoNotFoundError:
+            logger.warning("quietHours timezone %s not found, using local time", self.timezone)
+            return None
 
 
 @dataclass
@@ -65,6 +103,7 @@ class Profile:
 
     rules: dict[str, DisplayConfig] = field(default_factory=dict)
     colors: dict[str, tuple[int, int, int]] = field(default_factory=dict)
+    quiet_hours: QuietHours | None = None
 
     def __post_init__(self) -> None:
         # Merge defaults with any custom colors
@@ -117,24 +156,54 @@ def load_profile(path: str | Path, rules_expected: bool = True) -> Profile:
             strip_prefix=bool(rule_data.get("strip_prefix", False)),
             systems=rule_data.get("systems", []),
             severity=severity_list,
+            tags=[str(t) for t in rule_data.get("tags", [])],
         )
 
-    profile = Profile(rules=rules, colors=colors)
+    profile = Profile(rules=rules, colors=colors, quiet_hours=_parse_quiet_hours(data.get("quietHours")))
     logger.info("loaded profile with %d rules from %s", len(rules), path)
     return profile
 
 
-def match_rule(profile: Profile, msg: Message) -> DisplayConfig | None:
+def _parse_quiet_hours(data: dict | None) -> QuietHours | None:
+    """The profile's `quietHours`, or None. A malformed time fails loading."""
+    if not data:
+        return None
+    return QuietHours(
+        start=_clock_time(data["from"]),
+        end=_clock_time(data["to"]),
+        weekends=bool(data.get("weekends", False)),
+        timezone=str(data.get("timezone", "")),
+        allow=[str(s).lower() for s in data.get("allow", ["error", "critical"])],
+    )
+
+
+def _clock_time(value: str | int) -> time:
+    """A `HH:MM` time. Unquoted, YAML 1.1 reads 19:00 as the base-60 number
+    1140 (19 * 60), so an int is taken as minutes since midnight."""
+    if isinstance(value, int):
+        return time(value // 60, value % 60)
+    return time.fromisoformat(str(value))
+
+
+def match_rule(profile: Profile, msg: Message, now: datetime | None = None) -> DisplayConfig | None:
     """Find the first matching display rule for a message.
 
     Matching logic:
-    1. Iterate rules in order
-    2. Check if message system matches rule systems (or wildcard "*")
-    3. Check if message severity matches rule severity list
-    4. First match wins
+    1. During the profile's quiet hours, only its `allow` severities go on
+    2. Iterate rules in order
+    3. Check if message system matches rule systems (or wildcard "*")
+    4. Check if message severity matches rule severity list
+    5. Check that every rule tag is one of the message's tags
+    6. First match wins
     """
     msg_system = msg.system.lower()
     msg_severity = msg.severity.lower()
+    msg_tags = {t.strip() for t in msg.tags.split(",")} if msg.tags else set()
+
+    quiet = profile.quiet_hours
+    if quiet and msg_severity not in quiet.allow and quiet.active(now):
+        logger.info("quiet hours: not showing %s message from %s", msg_severity, msg_system)
+        return None
 
     for rule_name, config in profile.rules.items():
         # Check system match
@@ -145,6 +214,10 @@ def match_rule(profile: Profile, msg: Message) -> DisplayConfig | None:
         # Check severity match
         severity_match = not config.severity or msg_severity in config.severity
         if not severity_match:
+            continue
+
+        # Check tag match
+        if not all(tag in msg_tags for tag in config.tags):
             continue
 
         logger.debug("matched rule '%s' for system=%s severity=%s", rule_name, msg_system, msg_severity)
@@ -165,6 +238,7 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
         strip_prefix=config.strip_prefix,
         systems=config.systems,
         severity=config.severity,
+        tags=config.tags,
     )
 
     # Render Jinja2 text template
