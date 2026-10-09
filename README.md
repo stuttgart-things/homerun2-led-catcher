@@ -240,6 +240,23 @@ web app and the JSON API remains the only path.
 - The endpoint is unauthenticated, like the existing health and web routes. Fine
   while the port is cluster-internal.
 
+## Show an Event Again
+
+In the web simulator (`LED_MODE=web` and `full`), a click on a row of the event
+timeline shows that event on the matrix again, for when it went by too fast or
+someone should see it. Enter on a focused row does the same.
+
+- The event is matched as when it arrived, but **without quiet hours**: a click
+  is a deliberate request. An event no rule shows becomes a card in its
+  severity colour, for 10 seconds.
+- The replay is recorded as a new event, marked ↻, so every open simulator
+  draws it. In `full` mode it goes on the real panel too.
+- `POST /api/events/{id}/replay` is the endpoint behind it (202, 404 for an id
+  no longer in the buffer, 429 above `LED_API_RATE_LIMIT` per minute). Like
+  `/streams`, it needs no token: it only shows what was on the bus already.
+- Events written through `POST /display` have no original message and are not
+  clickable.
+
 ## Display Profile
 
 Display rules are defined in a YAML profile that maps (system, severity) to display modes:

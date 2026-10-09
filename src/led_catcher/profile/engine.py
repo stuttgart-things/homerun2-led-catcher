@@ -185,7 +185,12 @@ def _clock_time(value: str | int) -> time:
     return time.fromisoformat(str(value))
 
 
-def match_rule(profile: Profile, msg: Message, now: datetime | None = None) -> DisplayConfig | None:
+def match_rule(
+    profile: Profile,
+    msg: Message,
+    now: datetime | None = None,
+    ignore_quiet_hours: bool = False,
+) -> DisplayConfig | None:
     """Find the first matching display rule for a message.
 
     Matching logic:
@@ -200,7 +205,7 @@ def match_rule(profile: Profile, msg: Message, now: datetime | None = None) -> D
     msg_severity = msg.severity.lower()
     msg_tags = {t.strip() for t in msg.tags.split(",")} if msg.tags else set()
 
-    quiet = profile.quiet_hours
+    quiet = None if ignore_quiet_hours else profile.quiet_hours
     if quiet and msg_severity not in quiet.allow and quiet.active(now):
         logger.info("quiet hours: not showing %s message from %s", msg_severity, msg_system)
         return None
@@ -224,6 +229,20 @@ def match_rule(profile: Profile, msg: Message, now: datetime | None = None) -> D
         return _resolve_config(config, msg, profile)
 
     return None
+
+
+FALLBACK_CARD_SECONDS = 10.0
+"""How long a replayed event that no rule matches stays on the panel (#128)."""
+
+
+def fallback_card(profile: Profile, msg: Message) -> DisplayConfig:
+    """A card in the message's severity colour, for showing an event on
+    request that no rule would show (#128)."""
+    return _resolve_config(
+        DisplayConfig(kind="card", text="{{ message }}", duration=FALLBACK_CARD_SECONDS, strip_prefix=True),
+        msg,
+        profile,
+    )
 
 
 def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> DisplayConfig:

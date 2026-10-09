@@ -10,11 +10,12 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, Form, Request, Response
+from fastapi import FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
+from led_catcher.handlers.display_api import RateLimiter
 from led_catcher.web.events import EventTracker
 from led_catcher.web.preview import create_preview_router
 
@@ -37,6 +38,8 @@ def create_web_app(
     mode: str = "web",
     display_api: bool = False,
     stop: asyncio.Event | None = None,
+    replay: Callable[[int], object] | None = None,
+    replay_rate_limit: int = 30,
 ) -> FastAPI:
     """Create the HTMX simulator FastAPI app.
 
@@ -51,6 +54,10 @@ def create_web_app(
 
     ``stop`` is the process's shutdown event. Setting it ends every open event
     stream, so a shutdown finds none left to cut off (#105).
+
+    With ``replay`` a timeline row is clickable and ``POST
+    /api/events/{id}/replay`` shows that event again (#128), at most
+    ``replay_rate_limit`` times a minute.
     """
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     presets = presets or []
@@ -70,7 +77,7 @@ def create_web_app(
         # and it is the part nobody reads.
         response.headers["Cache-Control"] = "no-store"
         template = (TEMPLATES_DIR / "index.html").read_text()
-        events_html = _render_events(tracker)
+        events_html = _render_events(tracker, replayable=replay is not None)
         page = (
             template.replace("{{ version }}", version)
             .replace("{{ commit }}", commit[:7] if len(commit) > 7 else commit)
@@ -87,7 +94,7 @@ def create_web_app(
 
     @app.get("/events", response_class=HTMLResponse)
     async def events_partial():
-        return HTMLResponse(_render_events(tracker))
+        return HTMLResponse(_render_events(tracker, replayable=replay is not None))
 
     @app.get("/stats", response_class=HTMLResponse)
     async def stats_partial():
@@ -152,7 +159,26 @@ def create_web_app(
 
     @app.get("/api/events/stream")
     async def events_stream(request: Request):
-        return EventSourceResponse(event_stream(tracker, request.is_disconnected, consumer, presets, stop=stop))
+        return EventSourceResponse(
+            event_stream(tracker, request.is_disconnected, consumer, presets, stop=stop, replayable=replay is not None)
+        )
+
+    if replay is not None:
+        limiter = RateLimiter(replay_rate_limit)
+
+        @app.post("/api/events/{event_id}/replay", status_code=202)
+        async def replay_event(event_id: int):
+            wait = limiter.acquire()
+            if wait:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"rate limit: {replay_rate_limit} replays per minute",
+                    headers={"Retry-After": str(int(wait) + 1)},
+                )
+            event = replay(event_id)
+            if event is None:
+                raise HTTPException(status_code=404, detail=f"no event {event_id} to show again")
+            return {"id": event.id, "replayOf": event.replay_of}
 
     return app
 
@@ -164,6 +190,7 @@ async def event_stream(
     presets: list[list[str]] | None = None,
     interval: float = 1.0,
     stop: asyncio.Event | None = None,
+    replayable: bool = False,
 ) -> AsyncIterator[dict]:
     """Yield SSE events until the client goes away or ``stop`` is set.
 
@@ -186,7 +213,7 @@ async def event_stream(
             last_version = current
             yield {
                 "event": "events-update",
-                "data": _render_events(tracker),
+                "data": _render_events(tracker, replayable=replayable),
             }
             yield {
                 "event": "stats-update",
@@ -249,11 +276,15 @@ CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocompl
 </form>"""
 
 
-def _render_events(tracker: EventTracker) -> str:
+def _render_events(tracker: EventTracker, replayable: bool = False) -> str:
     """Render the events timeline as HTML.
 
     Every field is escaped: titles come from messages and from POST /display,
     and the timeline is served to every viewer.
+
+    With ``replayable``, a row whose event came from a message posts to
+    ``/api/events/{id}/replay`` when clicked (#128). A replayed event is
+    marked with ↻.
     """
     events = tracker.recent(30)
     if not events:
@@ -261,13 +292,22 @@ def _render_events(tracker: EventTracker) -> str:
 
     rows = []
     for e in events:
+        if replayable and e.source is not None:
+            attrs = (
+                f' class="event-row replayable" role="button" tabindex="0"'
+                f' hx-post="/api/events/{e.id}/replay" hx-swap="none" hx-trigger="click, keyup[key==\'Enter\']"'
+                f' title="Show again on the matrix"'
+            )
+        else:
+            attrs = ' class="event-row"'
+        replay_mark = '<span class="event-replay" title="shown again">↻</span>' if e.replay_of else ""
         rows.append(
-            f'<div class="event-row">'
+            f"<div{attrs}>"
             f'<span class="event-time">{html.escape(e.timestamp)}</span>'
             f'<span class="event-dot" style="background:{e.color_hex()}"></span>'
             f'<span class="event-severity {e.severity_css()}">{html.escape(e.severity.upper())}</span>'
             f'<span class="event-system">{html.escape(e.system)}</span>'
-            f'<span class="event-title">{html.escape(e.title)}</span>'
+            f'<span class="event-title">{replay_mark}{html.escape(e.title)}</span>'
             f"</div>"
         )
     return "\n".join(rows)
