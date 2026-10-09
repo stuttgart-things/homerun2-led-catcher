@@ -7,6 +7,8 @@ import time
 from collections import deque
 from dataclasses import dataclass, field
 
+from led_catcher.models import Message
+
 
 @dataclass
 class LedEvent:
@@ -43,6 +45,11 @@ class LedEvent:
     # Assigned by EventTracker.record — a sequence the browser can follow
     # without guessing from timestamps.
     id: int = 0
+    # The message the event came from, so a click in the timeline can show it
+    # again (#128). None for events written through POST /display.
+    source: Message | None = field(default=None, repr=False, compare=False)
+    # The id of the event this one shows again, 0 for a new event.
+    replay_of: int = 0
 
     def severity_css(self) -> str:
         return {
@@ -77,6 +84,11 @@ class EventTracker:
         switched: the event stream fires, and the canvas re-reads /display."""
         with self._lock:
             self._version += 1
+
+    def get(self, event_id: int) -> LedEvent | None:
+        """The event with this id, while it is still in the buffer."""
+        with self._lock:
+            return next((e for e in self._events if e.id == event_id), None)
 
     def recent(self, n: int = 20) -> list[LedEvent]:
         with self._lock:

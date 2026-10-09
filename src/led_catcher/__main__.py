@@ -22,7 +22,7 @@ from led_catcher.handlers.health import health_app, set_build_info, set_consumer
 from led_catcher.handlers.led_handler import create_led_handler
 from led_catcher.handlers.log_handler import log_handler
 from led_catcher.profile import Profile, load_profile
-from led_catcher.web import EventTracker, create_web_app, create_web_handler
+from led_catcher.web import EventTracker, create_replayer, create_web_app, create_web_handler
 
 logger = logging.getLogger("led_catcher")
 
@@ -102,7 +102,13 @@ def _build_app(
     idle_color: tuple[int, int, int] = (0, 100, 255),
 ) -> FastAPI:
     """Build the combined FastAPI app: health, /display, /streams and the optional simulator."""
+    # The worker exists already in every mode that drives the panel; `web`
+    # has none, and its /display writes reach only the simulator.
+    worker = get_worker(panel=cfg.panel) if mode in ("led", "full", "standalone") else None
     if tracker is not None:
+        # A click in the timeline shows an event again, on the panel too where
+        # there is one (#128). standalone has no caught messages to replay.
+        replay = create_replayer(profile, tracker, worker) if mode in ("web", "full") else None
         # Mount health endpoints on the web app
         app = create_web_app(
             tracker,
@@ -114,15 +120,14 @@ def _build_app(
             mode=mode,
             display_api=cfg.api.writable,
             stop=stop,
+            replay=replay,
+            replay_rate_limit=cfg.api.rate_limit,
         )
         app.get("/healthz")(health_app.routes[0].endpoint)
         app.get("/health")(health_app.routes[1].endpoint)
     else:
         app = health_app
 
-    # The worker exists already in every mode that drives the panel; `web`
-    # has none, and its /display writes reach only the simulator.
-    worker = get_worker(panel=cfg.panel) if mode in ("led", "full", "standalone") else None
     if worker is not None:
         worker.set_idle(idle)
     app.include_router(

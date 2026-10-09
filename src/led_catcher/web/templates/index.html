@@ -355,6 +355,26 @@
             border-color: var(--bg-tertiary);
         }
 
+        /* A click shows the event on the matrix again (#128). */
+        .event-row.replayable {
+            cursor: pointer;
+        }
+
+        .event-row.replayable:hover,
+        .event-row.replayable:focus-visible {
+            border-color: var(--accent-purple);
+            outline: none;
+        }
+
+        .event-row.replayable:active {
+            background: var(--bg-tertiary);
+        }
+
+        .event-replay {
+            color: var(--accent-purple);
+            margin-right: 4px;
+        }
+
         .event-time {
             font-size: 0.7rem;
             color: var(--text-secondary);
