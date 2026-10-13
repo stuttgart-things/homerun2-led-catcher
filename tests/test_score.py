@@ -15,6 +15,7 @@ from led_catcher.display.score import (
     DIGIT_W,
     Score,
     display_score,
+    format_score,
     number_width,
     parse_score,
     render,
@@ -112,6 +113,50 @@ def test_parse_skips_malformed_played_sets_but_keeps_the_rest():
     s = parse_score("points=1:1;played=11-8,junk,9-11")
     assert s is not None
     assert s.played == [(11, 8), (9, 11)]
+
+
+def test_parse_zaehlwerks_tags_as_a_board():
+    """zaehlwerk sends the board as message tags: commas, player_a/player_b,
+    finished sets separated by spaces. The routing tags around it are ignored."""
+    s = parse_score(
+        "match=m1,set=3,transition=point,side=b,"
+        "points=5:10,sets=1:1,serve=b,player_a=Anna,player_b=Bernd,played=11-8 9-11"
+    )
+    assert s is not None
+    assert s.points == (5, 10)
+    assert s.sets == (1, 1)
+    assert s.set_number == 3
+    assert s.serving == 1
+    assert s.names == ("ANNA", "BERND")
+    assert s.played == [(11, 8), (9, 11)]
+
+
+def test_parse_a_bare_score_as_a_vs_b():
+    s = parse_score("7:5")
+    assert s is not None
+    assert s.points == (7, 5)
+    assert s.names == ("A", "B")
+    assert s.serving is None
+
+
+@pytest.mark.parametrize("raw", ["SET 1:0", "WIN 3:1"])
+def test_a_set_or_match_title_is_no_board(raw):
+    assert parse_score(raw) is None
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "points=8:6;sets=1:1;set=3;serve=b;a=ANJA;b=BEN;played=11-8,9-11;banner=SATZBALL;source=BUTTON-A",
+        "points=11:9;sets=3:1;set=4;winner=a;a=A;b=B",
+        "points=0:0;sets=0:0;set=1;a=A;b=B",
+    ],
+)
+def test_format_score_round_trips_the_payload(raw):
+    s = parse_score(raw)
+    assert s is not None
+    assert format_score(s) == raw
+    assert parse_score(format_score(s)) == s
 
 
 # ------------------------------------------------------------------ geometry

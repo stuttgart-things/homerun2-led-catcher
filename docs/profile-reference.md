@@ -175,6 +175,16 @@ points=8:6;sets=1:1;set=3;serve=b;a=ANJA;b=BEN;played=11-8,9-11;banner=SATZBALL 
 | `winner` | `a`/`b`; greens the winner and dims the loser | none |
 | `source` | device that sent the last point | not drawn |
 
+The same board is also read in two other shapes, and rewritten into the one
+above before it reaches the panel or the simulator:
+
+- **zaehlwerk's tags** — a text without a semicolon is read as a
+  comma-separated tag list. `player_a`/`player_b` stand for `a`/`b`, finished
+  sets are separated by spaces, and the routing tags around the board
+  (`match`, `transition`, `side`) are ignored:
+  `match=m1,set=3,transition=point,side=b,points=5:10,sets=1:1,serve=b,player_a=Anna,player_b=Bernd,played=11-8 9-11`
+- **a bare score** — `7:5` draws as a board with `A` and `B` for names.
+
 Unknown keys are ignored, so the pitcher can add fields without a lockstep
 release. A payload with no usable `points` falls back to `static` with the raw
 text: a panel showing the string beats a panel gone dark, which reads as broken
@@ -193,11 +203,15 @@ each one:
 ```yaml
 tabletennis-score:
   systems: [tabletennis]
-  severity: [INFO]
+  severity: [INFO, SUCCESS]
   kind: score
-  text: "{{ message }}"
+  text: "{{ tags if 'points=' in tags else title }}"
   hold: true
 ```
+
+This is the shipped rule. zaehlwerk puts the board in its tags; a zaehlwerk
+that does not yet sends only the title, which still draws `7:5` as a board,
+and `SET 1:0` falls back to static text.
 
 ## `duration` and `hold`
 
