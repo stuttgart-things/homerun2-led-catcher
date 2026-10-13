@@ -87,28 +87,77 @@ def test_critical_is_not_shown_as_info(tmp_path):
 # between points instead of scrolling past once.
 
 
+ZAEHLWERK_TAGS = (
+    "match=m1,set=3,transition=point,side=b,points=5:10,sets=1:1,serve=b,player_a=Anna,player_b=Bernd,played=11-8 9-11"
+)
+
+
 def test_a_tabletennis_score_gets_its_own_rule(tmp_path):
     profile = _shipped_profile(tmp_path)
     config = match_rule(profile, Message(title="7:5", severity="info", system="tabletennis"))
 
     assert config is not None
-    assert config.kind == "static", "a score that scrolls away is not a scoreboard"
+    assert config.kind == "score", "a score that scrolls away is not a scoreboard"
     assert config.hold is True, "the score should stay up until the next point replaces it"
 
 
-def test_the_tabletennis_rule_renders_the_title_alone(tmp_path):
-    """The panel is 64x64: about ten glyphs of 6x10, and nothing is ellipsised.
+def test_the_tabletennis_rule_draws_the_board_from_zaehlwerks_tags(tmp_path):
+    """Names, sets and who serves come from the tags, not from the title."""
+    profile = _shipped_profile(tmp_path)
+    config = match_rule(
+        profile,
+        Message(title="5:10", message="Anna 5 : 10 Bernd", severity="info", system="tabletennis", tags=ZAEHLWERK_TAGS),
+    )
 
-    `{{ system }}: {{ title }}` would render "tabletennis: 7:5" and run off the
-    edge, which is why this rule exists at all rather than letting the wildcard
-    take it.
-    """
+    assert config is not None
+    assert config.text == "points=5:10;sets=1:1;set=3;serve=b;a=ANNA;b=BERND;played=11-8,9-11"
+
+
+def test_a_won_match_greens_the_winner(tmp_path):
+    profile = _shipped_profile(tmp_path)
+    tags = "match=m1,set=4,transition=match_won,side=b,points=9:11,sets=1:3,winner=b,player_a=Anna,player_b=Bernd"
+    config = match_rule(profile, Message(title="WIN 1:3", severity="success", system="tabletennis", tags=tags))
+
+    assert config is not None
+    assert "winner=b" in config.text
+    assert "serve=" not in config.text
+
+
+@pytest.mark.parametrize(
+    ("transition", "banner"),
+    [("set_won", "SATZ Bernd"), ("match_won", "SIEG Bernd")],
+)
+def test_zaehlwerks_banner_reaches_the_board(tmp_path, transition, banner):
+    """SATZ/SIEG come from zaehlwerk; the catcher only draws them, uppercased."""
+    profile = _shipped_profile(tmp_path)
+    tags = (
+        f"match=m1,set=2,transition={transition},side=b,"
+        f"points=0:0,sets=0:1,player_a=Anna,player_b=Bernd,banner={banner}"
+    )
+    config = match_rule(profile, Message(title="SET 0:1", severity="success", system="tabletennis", tags=tags))
+
+    assert config is not None
+    assert config.text.endswith(f";banner={banner.upper()}")
+
+
+def test_a_bare_title_still_draws_a_board_with_a_and_b(tmp_path):
+    """An older zaehlwerk sends no board tags: the title alone, names A and B."""
+    profile = _shipped_profile(tmp_path)
+    config = match_rule(
+        profile, Message(title="7:5", severity="info", system="tabletennis", tags="match=m1,set=1,transition=point")
+    )
+
+    assert config is not None
+    assert config.text == "points=7:5;sets=0:0;set=1;a=A;b=B"
+
+
+def test_a_set_title_without_board_tags_falls_back_to_the_title(tmp_path):
+    """ "SET 1:0" is no board; the score mode shows it as static text, as before."""
     profile = _shipped_profile(tmp_path)
     config = match_rule(profile, Message(title="SET 1:0", severity="success", system="tabletennis"))
 
     assert config is not None
     assert config.text == "SET 1:0"
-    assert len(config.text) <= 10
 
 
 def test_the_tabletennis_rule_wins_over_the_wildcard(tmp_path):
@@ -122,7 +171,7 @@ def test_the_tabletennis_rule_wins_over_the_wildcard(tmp_path):
     for severity in ("info", "success"):
         config = match_rule(profile, Message(title="7:5", severity=severity, system="tabletennis"))
         assert config is not None
-        assert config.kind == "static", f"the wildcard took severity={severity}"
+        assert config.kind == "score", f"the wildcard took severity={severity}"
 
 
 def test_other_systems_are_unaffected_by_the_tabletennis_rule(tmp_path):

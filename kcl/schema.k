@@ -75,8 +75,13 @@ displayRules:
     duration: 5
   # A live score, not a notification: it should stay readable between points
   # rather than scroll past once. `hold` keeps it up until the next point
-  # replaces it, and `static` renders the title alone — the panel is 64x64 and
-  # a "tabletennis: " prefix would push the score off the edge.
+  # replaces it.
+  #
+  # `score` draws the whole board — points, sets, player names, the server's
+  # name in orange. zaehlwerk sends the board in its tags (points=, serve=,
+  # player_a=, ...). An older zaehlwerk sends only the title: "7:5" then still
+  # draws as a board with A and B for names, and "SET 1:0" falls back to plain
+  # text, which is what the panel showed before.
   #
   # Must stay above default-info: first match wins, and the wildcard there
   # would otherwise take it.
@@ -87,8 +92,8 @@ displayRules:
   tabletennis-score:
     systems: [tabletennis]
     severity: [INFO, SUCCESS]
-    kind: static
-    text: "{{ title }}"
+    kind: score
+    text: "{{ tags if 'points=' in tags else title }}"
     font: 6x10.bdf
     hold: true
     duration: 3

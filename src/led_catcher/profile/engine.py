@@ -18,6 +18,7 @@ import jinja2
 import yaml
 
 from led_catcher.display.card import CardContent, strip_title_prefix
+from led_catcher.display.score import format_score, parse_score
 from led_catcher.models import Message
 
 logger = logging.getLogger(__name__)
@@ -276,6 +277,14 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
             )
         except jinja2.TemplateError:
             logger.exception("failed to render template for text: %s", resolved.text)
+
+    if resolved.kind.lower() == "score":
+        # A board arrives in more than one shape (see parse_score). Rewritten
+        # here once, so the panel and the simulator's canvas read the same one;
+        # text that is no board at all is left for the static fallback.
+        board = parse_score(resolved.text)
+        if board is not None:
+            resolved.text = format_score(board)
 
     # Resolve color from severity
     severity_key = msg.severity.lower()

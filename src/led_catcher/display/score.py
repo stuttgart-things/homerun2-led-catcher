@@ -15,6 +15,7 @@ module owns the pixels. See zaehlwerk ADR-0001.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -153,22 +154,49 @@ def _side(raw: str) -> int | None:
     return None
 
 
-def parse_score(text: str) -> Score | None:
-    """Parse the semicolon-separated payload into a [Score].
+# A bare "8:6" — the title an older zaehlwerk sends — is a board too: the
+# points, with the names left at A and B.
+_BARE_POINTS = re.compile(r"^\s*\d+\s*:\s*\d+\s*$")
 
-    Unknown keys are ignored so the pitcher can add fields without a lockstep
-    release, and every field has a default. Only a payload that carries no
-    usable points at all is rejected — the caller then falls back to static
-    text rather than blanking the panel.
+# The names zaehlwerk gives the players in its tags, against the keys the
+# semicolon payload uses for them.
+_ALIASES = {"player_a": "a", "player_b": "b"}
+
+
+def _fields(text: str) -> dict[str, str]:
+    """Split the payload into key/value pairs.
+
+    Two wire shapes carry the same board. The documented one separates fields
+    with semicolons and finished sets with commas. zaehlwerk's message tags are
+    a comma-separated list of the same keys, with finished sets separated by
+    spaces — so a text with no semicolon in it is read as tags.
+    """
+    if _BARE_POINTS.match(text):
+        return {"points": text.strip()}
+
+    separator = ";" if ";" in text else ","
+    fields: dict[str, str] = {}
+    for chunk in text.split(separator):
+        key, sep, value = chunk.partition("=")
+        if sep:
+            key = key.strip().lower()
+            fields[_ALIASES.get(key, key)] = value.strip()
+    return fields
+
+
+def parse_score(text: str) -> Score | None:
+    """Parse a board payload into a [Score].
+
+    Accepts the semicolon payload, zaehlwerk's tag list (see `_fields`) and a
+    bare `a:b`. Unknown keys are ignored so the pitcher can add fields without
+    a lockstep release, and every field has a default. Only a payload that
+    carries no usable points at all is rejected — the caller then falls back to
+    static text rather than blanking the panel.
     """
     if not text or not text.strip():
         return None
 
-    fields: dict[str, str] = {}
-    for chunk in text.split(";"):
-        key, sep, value = chunk.partition("=")
-        if sep:
-            fields[key.strip().lower()] = value.strip()
+    fields = _fields(text)
 
     points = _pair(fields.get("points", ""))
     if points is None:
@@ -195,8 +223,8 @@ def parse_score(text: str) -> Score | None:
         (fields.get("b") or "B").upper()[:MAX_NAME],
     )
 
-    for chunk in fields.get("played", "").split(","):
-        if not chunk.strip():
+    for chunk in re.split(r"[,\s]+", fields.get("played", "")):
+        if not chunk:
             continue
         played = _pair(chunk, "-")
         if played is not None:
@@ -205,6 +233,33 @@ def parse_score(text: str) -> Score | None:
     score.banner = fields.get("banner", "").upper()
     score.source = fields.get("source", "").upper()
     return score
+
+
+def format_score(score: Score) -> str:
+    """Write a [Score] back as the semicolon payload.
+
+    The profile engine normalises every score rule's text through this, so
+    whichever shape arrived, the panel and the simulator's canvas — which has
+    its own copy of the parser — both read the documented one.
+    """
+    parts = [
+        f"points={score.points[0]}:{score.points[1]}",
+        f"sets={score.sets[0]}:{score.sets[1]}",
+        f"set={score.set_number}",
+    ]
+    if score.serving is not None:
+        parts.append(f"serve={'ab'[score.serving]}")
+    if score.winner is not None:
+        parts.append(f"winner={'ab'[score.winner]}")
+    parts.append(f"a={score.names[0]}")
+    parts.append(f"b={score.names[1]}")
+    if score.played:
+        parts.append("played=" + ",".join(f"{a}-{b}" for a, b in score.played))
+    if score.banner:
+        parts.append(f"banner={score.banner}")
+    if score.source:
+        parts.append(f"source={score.source}")
+    return ";".join(parts)
 
 
 # --------------------------------------------------------------------- drawing
