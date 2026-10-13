@@ -123,6 +123,23 @@ def test_a_won_match_greens_the_winner(tmp_path):
     assert "serve=" not in config.text
 
 
+@pytest.mark.parametrize(
+    ("transition", "banner"),
+    [("set_won", "SATZ Bernd"), ("match_won", "SIEG Bernd")],
+)
+def test_zaehlwerks_banner_reaches_the_board(tmp_path, transition, banner):
+    """SATZ/SIEG come from zaehlwerk; the catcher only draws them, uppercased."""
+    profile = _shipped_profile(tmp_path)
+    tags = (
+        f"match=m1,set=2,transition={transition},side=b,"
+        f"points=0:0,sets=0:1,player_a=Anna,player_b=Bernd,banner={banner}"
+    )
+    config = match_rule(profile, Message(title="SET 0:1", severity="success", system="tabletennis", tags=tags))
+
+    assert config is not None
+    assert config.text.endswith(f";banner={banner.upper()}")
+
+
 def test_a_bare_title_still_draws_a_board_with_a_and_b(tmp_path):
     """An older zaehlwerk sends no board tags: the title alone, names A and B."""
     profile = _shipped_profile(tmp_path)

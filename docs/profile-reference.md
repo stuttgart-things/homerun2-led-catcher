@@ -183,6 +183,8 @@ above before it reaches the panel or the simulator:
   sets are separated by spaces, and the routing tags around the board
   (`match`, `transition`, `side`) are ignored:
   `match=m1,set=3,transition=point,side=b,points=5:10,sets=1:1,serve=b,player_a=Anna,player_b=Bernd,played=11-8 9-11`
+  zaehlwerk adds `banner=SATZ <name>` on a won set and `banner=SIEG <name>`
+  on the won match; the next point replaces it.
 - **a bare score** — `7:5` draws as a board with `A` and `B` for names.
 
 Unknown keys are ignored, so the pitcher can add fields without a lockstep
