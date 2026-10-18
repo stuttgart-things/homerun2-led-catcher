@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from datetime import datetime
 from typing import Callable
 
@@ -103,12 +104,17 @@ def create_replayer(profile: Profile, tracker: EventTracker, worker=None) -> Rep
 
 
 def _card_json(config) -> dict | None:
-    """The card as the panel lays it out, for the canvas."""
+    """The card as the panel lays it out, for the canvas.
+
+    ``content`` is what the card says before it is cut to 64 columns: the
+    big-screen view (/wall) lays the card out again for its own size.
+    """
     from led_catcher.display.card import card_layout, content_of
     from led_catcher.web.preview import PANEL_WIDTH
 
     try:
-        return card_layout(content_of(config), config.color, PANEL_WIDTH).to_json()
+        content = content_of(config)
+        return {**card_layout(content, config.color, PANEL_WIDTH).to_json(), "content": asdict(content)}
     except Exception:
         # The simulator falls back to static text; the event is still recorded.
         logger.exception("cannot lay out card for the simulator")
