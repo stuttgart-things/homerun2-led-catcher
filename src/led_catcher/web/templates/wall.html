@@ -41,12 +41,15 @@
     <canvas id="wall"></canvas>
     <div class="hud" id="hud">
         HOMERUN<sup>2</sup> LED WALL · <span id="hud-grid"></span> · {{ mode }} · {{ version }} ({{ commit }})
-        · double-click or <kbd>f</kbd>: fullscreen · <a href="/">simulator</a>
+        · double-click or <kbd>f</kbd>: fullscreen · <a href="{{ base_path }}/">simulator</a>
     </div>
     <div class="offline" id="offline" hidden>reconnecting…</div>
 
     <script>
         'use strict';
+        // BASE_PATH: the prefix this page is served under behind a reverse
+        // proxy (e.g. /led), empty at the root. Every request below carries it.
+        const BASE_PATH = '{{ base_path }}';
         // The big-screen view (/wall). Follows the same events as the
         // simulator at /, but on a larger virtual matrix: text, cards and the
         // clock are laid out again for the grid, images and GIFs are prepared
@@ -208,7 +211,7 @@
             const key = font + '\u0000' + text;
             if (!textCache.has(key)) {
                 if (textCache.size > 200) textCache.clear();
-                const res = await fetch('/api/preview/text?' + new URLSearchParams({ font: font, text: text }));
+                const res = await fetch(BASE_PATH + '/api/preview/text?' + new URLSearchParams({ font: font, text: text }));
                 if (!res.ok) throw new Error('font ' + font + ': HTTP ' + res.status);
                 textCache.set(key, await res.json());
             }
@@ -471,7 +474,7 @@
 
         async function frames(ev, token) {
             try {
-                const url = '/api/preview/image/' + encodeURIComponent(ev.image) + '?' + new URLSearchParams({ width: W, height: H });
+                const url = BASE_PATH + '/api/preview/image/' + encodeURIComponent(ev.image) + '?' + new URLSearchParams({ width: W, height: H });
                 return await guard(token, loadFrames(url));
             } catch (e) {
                 if (e instanceof Cancelled) throw e;
@@ -511,7 +514,7 @@
         async function showScore(ev, token) {
             let board;
             try {
-                board = await guard(token, loadFrames('/api/preview/score?' + new URLSearchParams({ text: ev.text || '' })));
+                board = await guard(token, loadFrames(BASE_PATH + '/api/preview/score?' + new URLSearchParams({ text: ev.text || '' })));
             } catch (e) {
                 if (e instanceof Cancelled) throw e;
                 return staticText(ev, token);
@@ -652,8 +655,8 @@
 
         async function sync(initial) {
             const [events, panel] = await Promise.all([
-                fetch('/api/events').then(r => r.json()),   // newest first
-                fetch('/display').then(r => r.ok ? r.json() : {}).catch(() => ({}))
+                fetch(BASE_PATH + '/api/events').then(r => r.json()),   // newest first
+                fetch(BASE_PATH + '/display').then(r => r.ok ? r.json() : {}).catch(() => ({}))
             ]);
             const fresh = events.filter(ev => ev.id > lastId).reverse();
             if (events.length) lastId = Math.max(lastId, events[0].id);
@@ -680,7 +683,7 @@
 
         // One stream per tab, as on the simulator page (#106).
         const offline = document.getElementById('offline');
-        const stream = new EventSource('/api/events/stream');
+        const stream = new EventSource(BASE_PATH + '/api/events/stream');
         stream.addEventListener('events-update', () => resync(false));
         stream.addEventListener('open', () => { offline.hidden = true; });
         stream.addEventListener('error', () => { offline.hidden = false; });

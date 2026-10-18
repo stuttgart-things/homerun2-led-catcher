@@ -100,6 +100,10 @@ deployment = {
                                 value: str(config.healthPort)
                             }
                             {
+                                name: "BASE_PATH"
+                                value: config.basePath
+                            }
+                            {
                                 name: "PROFILE_PATH"
                                 value: config.profilePath
                             }

@@ -54,6 +54,24 @@ config.httpRouteParentRefNamespace: default
 config.httpRouteHostname: led-catcher.example.com
 ```
 
+### Under a path prefix (`BASE_PATH`)
+
+To share a hostname with the other homerun2 UIs — the homerun2 portal, or one
+gateway for all of them — serve the service under a prefix:
+
+```yaml
+config.basePath: /led
+config.httpRouteEnabled: true
+config.httpRouteParentRefName: my-gateway
+config.httpRouteHostname: homerun2.example.com
+```
+
+The HTTPRoute then matches `PathPrefix /led` and forwards it without a
+rewrite: the service answers on `/led/`, `/led/api/...` and `/led/display`
+itself, and every URL in the simulator page carries the prefix. `/` redirects
+to `/led/`. `/healthz` and `/health` answer at the root as well, so the probes
+need no change.
+
 ### With Redis Password
 
 ```yaml

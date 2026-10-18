@@ -34,6 +34,11 @@ schema LedCatcher:
     # Health endpoint
     healthPort: int | str = "8080"
 
+    # URL prefix behind a reverse proxy, e.g. "/led" for the homerun2 portal
+    # (BASE_PATH). Empty serves at the root. The HTTPRoute matches it as is;
+    # /healthz stays at the root for the probes.
+    basePath: str = ""
+
     # Service
     serviceType: str = "ClusterIP"
     servicePort: int = 80

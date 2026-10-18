@@ -40,6 +40,7 @@ def create_web_app(
     stop: asyncio.Event | None = None,
     replay: Callable[[int], object] | None = None,
     replay_rate_limit: int = 30,
+    base_path: str = "",
 ) -> FastAPI:
     """Create the HTMX simulator FastAPI app.
 
@@ -58,6 +59,11 @@ def create_web_app(
     With ``replay`` a timeline row is clickable and ``POST
     /api/events/{id}/replay`` shows that event again (#128), at most
     ``replay_rate_limit`` times a minute.
+
+    ``base_path`` (``BASE_PATH``, e.g. ``/led``) is the prefix the app is
+    served under behind a reverse proxy. The routes here stay at the root —
+    the caller mounts the app there — but every URL the page and its partials
+    point at carries it, so a click under ``/led/`` does not land on ``/``.
     """
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     presets = presets or []
@@ -77,9 +83,10 @@ def create_web_app(
         # and it is the part nobody reads.
         response.headers["Cache-Control"] = "no-store"
         template = (TEMPLATES_DIR / "index.html").read_text()
-        events_html = _render_events(tracker, replayable=replay is not None)
+        events_html = _render_events(tracker, replayable=replay is not None, base_path=base_path)
         page = (
-            template.replace("{{ version }}", version)
+            template.replace("{{ base_path }}", base_path)
+            .replace("{{ version }}", version)
             .replace("{{ commit }}", commit[:7] if len(commit) > 7 else commit)
             .replace("{{ date }}", date)
             .replace("{{ total_events }}", str(tracker.total))
@@ -90,7 +97,7 @@ def create_web_app(
             # title containing one be rewritten by a later replace().
             .replace("{{ events_content }}", events_html)
         )
-        return page.replace("{{ streams_control }}", _render_streams_control(consumer, presets))
+        return page.replace("{{ streams_control }}", _render_streams_control(consumer, presets, base_path=base_path))
 
     @app.get("/wall", response_class=HTMLResponse)
     async def wall(response: Response):
@@ -104,14 +111,15 @@ def create_web_app(
         response.headers["Cache-Control"] = "no-store"
         template = (TEMPLATES_DIR / "wall.html").read_text()
         return (
-            template.replace("{{ version }}", html.escape(version))
+            template.replace("{{ base_path }}", base_path)
+            .replace("{{ version }}", html.escape(version))
             .replace("{{ commit }}", html.escape(commit[:7] if len(commit) > 7 else commit))
             .replace("{{ mode }}", html.escape(mode))
         )
 
     @app.get("/events", response_class=HTMLResponse)
     async def events_partial():
-        return HTMLResponse(_render_events(tracker, replayable=replay is not None))
+        return HTMLResponse(_render_events(tracker, replayable=replay is not None, base_path=base_path))
 
     @app.get("/stats", response_class=HTMLResponse)
     async def stats_partial():
@@ -121,7 +129,7 @@ def create_web_app(
 
         @app.get("/ui/streams", response_class=HTMLResponse)
         async def streams_control_partial():
-            return HTMLResponse(_render_streams_control(consumer, presets))
+            return HTMLResponse(_render_streams_control(consumer, presets, base_path=base_path))
 
         @app.post("/ui/streams", response_class=HTMLResponse)
         async def switch_streams(streams: str = Form(...)):
@@ -139,11 +147,13 @@ def create_web_app(
             try:
                 await consumer.set_streams([s for s in streams.split("|")])
             except ValueError as exc:
-                return HTMLResponse(_render_streams_control(consumer, presets, error=str(exc)))
+                return HTMLResponse(_render_streams_control(consumer, presets, error=str(exc), base_path=base_path))
             except Exception as exc:
                 logger.exception("UI stream switch failed")
-                return HTMLResponse(_render_streams_control(consumer, presets, error=f"switch failed: {exc}"))
-            return HTMLResponse(_render_streams_control(consumer, presets))
+                return HTMLResponse(
+                    _render_streams_control(consumer, presets, error=f"switch failed: {exc}", base_path=base_path)
+                )
+            return HTMLResponse(_render_streams_control(consumer, presets, base_path=base_path))
 
     @app.get("/api/events")
     async def api_events():
@@ -177,7 +187,15 @@ def create_web_app(
     @app.get("/api/events/stream")
     async def events_stream(request: Request):
         return EventSourceResponse(
-            event_stream(tracker, request.is_disconnected, consumer, presets, stop=stop, replayable=replay is not None)
+            event_stream(
+                tracker,
+                request.is_disconnected,
+                consumer,
+                presets,
+                stop=stop,
+                replayable=replay is not None,
+                base_path=base_path,
+            )
         )
 
     if replay is not None:
@@ -208,6 +226,7 @@ async def event_stream(
     interval: float = 1.0,
     stop: asyncio.Event | None = None,
     replayable: bool = False,
+    base_path: str = "",
 ) -> AsyncIterator[dict]:
     """Yield SSE events until the client goes away or ``stop`` is set.
 
@@ -230,7 +249,7 @@ async def event_stream(
             last_version = current
             yield {
                 "event": "events-update",
-                "data": _render_events(tracker, replayable=replayable),
+                "data": _render_events(tracker, replayable=replayable, base_path=base_path),
             }
             yield {
                 "event": "stats-update",
@@ -244,7 +263,7 @@ async def event_stream(
                 last_streams = current_streams
                 yield {
                     "event": "streams-update",
-                    "data": _render_streams_control(consumer, presets),
+                    "data": _render_streams_control(consumer, presets, base_path=base_path),
                 }
         if stop is None:
             await asyncio.sleep(interval)
@@ -293,15 +312,15 @@ CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocompl
 </form>"""
 
 
-def _render_events(tracker: EventTracker, replayable: bool = False) -> str:
+def _render_events(tracker: EventTracker, replayable: bool = False, base_path: str = "") -> str:
     """Render the events timeline as HTML.
 
     Every field is escaped: titles come from messages and from POST /display,
     and the timeline is served to every viewer.
 
     With ``replayable``, a row whose event came from a message posts to
-    ``/api/events/{id}/replay`` when clicked (#128). A replayed event is
-    marked with ↻.
+    ``{base_path}/api/events/{id}/replay`` when clicked (#128). A replayed
+    event is marked with ↻.
     """
     events = tracker.recent(30)
     if not events:
@@ -312,7 +331,8 @@ def _render_events(tracker: EventTracker, replayable: bool = False) -> str:
         if replayable and e.source is not None:
             attrs = (
                 f' class="event-row replayable" role="button" tabindex="0"'
-                f' hx-post="/api/events/{e.id}/replay" hx-swap="none" hx-trigger="click, keyup[key==\'Enter\']"'
+                f' hx-post="{base_path}/api/events/{e.id}/replay" hx-swap="none"'
+                f" hx-trigger=\"click, keyup[key=='Enter']\""
                 f' title="Show again on the matrix"'
             )
         else:
@@ -330,14 +350,14 @@ def _render_events(tracker: EventTracker, replayable: bool = False) -> str:
     return "\n".join(rows)
 
 
-def _preset_button(group: list[str], active: bool) -> str:
-    """One preset button, posting its group form-encoded to /ui/streams."""
+def _preset_button(group: list[str], active: bool, base_path: str = "") -> str:
+    """One preset button, posting its group form-encoded to {base_path}/ui/streams."""
     label = html.escape(" + ".join(group))
     vals = html.escape(json.dumps({"streams": "|".join(group)}), quote=True)
     cls = "stream-preset active" if active else "stream-preset"
     return (
         f'<button type="button" class="{cls}"'
-        f' hx-post="/ui/streams" hx-vals="{vals}"'
+        f' hx-post="{base_path}/ui/streams" hx-vals="{vals}"'
         f' hx-target="#streams-control" hx-swap="innerHTML">{label}</button>'
     )
 
@@ -346,6 +366,7 @@ def _render_streams_control(
     consumer: RedisConsumer | None,
     presets: list[list[str]],
     error: str | None = None,
+    base_path: str = "",
 ) -> str:
     """Render the header stream control.
 
@@ -364,9 +385,9 @@ def _render_streams_control(
     if overridden:
         parts.append('<span class="stream-override">overridden</span>')
 
-    buttons = [_preset_button(group, group == active) for group in presets]
+    buttons = [_preset_button(group, group == active, base_path) for group in presets]
     if overridden and configured not in presets:
-        buttons.append(_preset_button(configured, False))
+        buttons.append(_preset_button(configured, False, base_path))
     if buttons:
         parts.append(f'<span class="stream-presets">{"".join(buttons)}</span>')
 
@@ -374,7 +395,7 @@ def _render_streams_control(
         vals = html.escape(json.dumps({"streams": "|".join(configured)}), quote=True)
         parts.append(
             f'<button type="button" class="stream-reset"'
-            f' hx-post="/ui/streams" hx-vals="{vals}"'
+            f' hx-post="{base_path}/ui/streams" hx-vals="{vals}"'
             f' hx-target="#streams-control" hx-swap="innerHTML"'
             f' title="Back to the configured streams">reset</button>'
         )
