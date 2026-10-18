@@ -10,6 +10,7 @@ import sys
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 
 from led_catcher.config import Config, load_config, setup_logging
 from led_catcher.config.settings import LED_MODES
@@ -18,7 +19,7 @@ from led_catcher.display import get_worker, reset_worker
 from led_catcher.display.clock import IdleScreen
 from led_catcher.handlers.control import create_control_router
 from led_catcher.handlers.display_api import create_display_router
-from led_catcher.handlers.health import health_app, set_build_info, set_consumer_state, set_display_state
+from led_catcher.handlers.health import health_app, healthz, set_build_info, set_consumer_state, set_display_state
 from led_catcher.handlers.led_handler import create_led_handler
 from led_catcher.handlers.log_handler import log_handler
 from led_catcher.profile import Profile, load_profile
@@ -122,6 +123,7 @@ def _build_app(
             stop=stop,
             replay=replay,
             replay_rate_limit=cfg.api.rate_limit,
+            base_path=cfg.base_path,
         )
         app.get("/healthz")(health_app.routes[0].endpoint)
         app.get("/health")(health_app.routes[1].endpoint)
@@ -135,7 +137,32 @@ def _build_app(
     )
     if consumer is not None:
         app.include_router(create_control_router(consumer))
-    return app
+    return _mount_base_path(app, cfg.base_path)
+
+
+def _mount_base_path(app: FastAPI, base_path: str) -> FastAPI:
+    """Serve ``app`` under ``base_path`` (``BASE_PATH``), unchanged when it is empty.
+
+    The proxy in front — the homerun2 portal, or an HTTPRoute matching the
+    prefix — forwards the path as is, without a rewrite, so the app answers
+    on ``/led/...`` and the URLs in its page carry the same prefix.
+
+    ``/healthz`` and ``/health`` stay at the root as well, so probes and
+    anything else that checks the pod directly need no prefix. The bare root
+    redirects to the UI.
+    """
+    if not base_path:
+        return app
+    root = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    root.get("/healthz")(healthz)
+    root.get("/health")(healthz)
+
+    @root.get("/", include_in_schema=False)
+    async def to_base_path() -> RedirectResponse:
+        return RedirectResponse(f"{base_path}/")
+
+    root.mount(base_path, app)
+    return root
 
 
 async def _run_consumer(consumer: RedisConsumer, stop: asyncio.Event | None = None) -> bool:

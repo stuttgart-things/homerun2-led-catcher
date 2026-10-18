@@ -18,6 +18,8 @@ DEFAULT_MAX_MESSAGE_AGE = 60.0
 LED_MODES = ("led", "web", "full", "standalone")
 """`standalone` drives the panel from the /display API alone — no Redis (#80)."""
 
+_BASE_PATH_SEGMENT = re.compile(r"[A-Za-z0-9._~-]+")
+
 
 @dataclass
 class RedisConfig:
@@ -92,6 +94,7 @@ class Config:
     max_message_age: float = DEFAULT_MAX_MESSAGE_AGE  # seconds, 0 = off (#123)
     led_mode: str = "full"  # led, web, full, standalone
     health_port: int = 8080
+    base_path: str = ""  # e.g. /led behind a reverse proxy; empty serves at the root
     profile_path: str = "profile.yaml"
     ui_stream_presets: list[list[str]] = field(default_factory=list)
     idle: str = "off"  # the idle screen: off, clock (#115)
@@ -169,6 +172,22 @@ def parse_idle(raw: str) -> str:
     if value not in IDLE_MODES:
         raise ValueError(f"LED_IDLE '{raw}': must be one of {', '.join(IDLE_MODES)}")
     return value
+
+
+def parse_base_path(raw: str) -> str:
+    """``BASE_PATH``: the URL prefix the service is served under, e.g. ``/led``.
+
+    Normalised to a leading slash and no trailing one; empty or ``/`` means
+    the root. It is written into the page's HTML and JavaScript, so it is held
+    to plain path segments rather than escaped at every use.
+    """
+    value = raw.strip().strip("/")
+    if not value:
+        return ""
+    for segment in value.split("/"):
+        if not _BASE_PATH_SEGMENT.fullmatch(segment) or segment in (".", ".."):
+            raise ValueError(f"BASE_PATH {raw!r}: segments may only contain letters, digits and . _ ~ -")
+    return "/" + value
 
 
 def parse_color(key: str, raw: str, default: str) -> str | tuple[int, int, int]:
@@ -325,6 +344,7 @@ def load_config() -> Config:
         max_message_age=parse_max_message_age(_getenv("MAX_MESSAGE_AGE", "")),
         led_mode=_getenv("LED_MODE", "full"),
         health_port=int(_getenv("HEALTH_PORT", "8080")),
+        base_path=parse_base_path(_getenv("BASE_PATH", "")),
         profile_path=_getenv("PROFILE_PATH", "profile.yaml"),
         ui_stream_presets=parse_stream_presets(_getenv("UI_STREAM_PRESETS", ""), redis_cfg.streams),
         idle=parse_idle(_getenv("LED_IDLE", "")),

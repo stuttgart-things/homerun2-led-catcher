@@ -126,6 +126,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `LED_API_MAX_TEXT` | `256` | Longest `text` accepted by `POST /display` |
 | `LED_API_RATE_LIMIT` | `30` | `/display` writes per minute, across all callers |
 | `HEALTH_PORT` | `8080` | Health/web server port |
+| `BASE_PATH` | *(empty)* | URL prefix behind a reverse proxy, e.g. `/led`: every route and every URL in the simulator carries it. `/healthz` stays at the root too |
 | `PROFILE_PATH` | `profile.yaml` | Path to display rules YAML |
 | `UI_STREAM_PRESETS` | *(empty)* | Web simulator one-click presets: comma-separated, `\|`-separated within a preset. Defaults to the configured streams as a single preset |
 | `LOG_FORMAT` | `json` | Log format: `json` or `text` |

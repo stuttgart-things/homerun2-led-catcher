@@ -37,7 +37,8 @@ httproute = {
                     {
                         path: {
                             type: "PathPrefix"
-                            value: "/"
+                            # No rewrite: the app answers under BASE_PATH itself.
+                            value: config.basePath if config.basePath else "/"
                         }
                     }
                 ]

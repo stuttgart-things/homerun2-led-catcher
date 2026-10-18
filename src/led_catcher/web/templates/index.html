@@ -454,7 +454,7 @@
     </style>
 </head>
 <!-- One event stream per tab: every sse-swap below and the canvas share it (#106). -->
-<body hx-ext="sse" sse-connect="/api/events/stream">
+<body hx-ext="sse" sse-connect="{{ base_path }}/api/events/stream">
     <div class="header">
         <div>
             <div class="header-title">HOMERUN<sup>2</sup></div>
@@ -504,6 +504,9 @@
     </div>
 
     <script>
+        // BASE_PATH: the prefix this page is served under behind a reverse
+        // proxy (e.g. /led), empty at the root. Every request below carries it.
+        const BASE_PATH = '{{ base_path }}';
         // LED matrix canvas simulation
         const canvas = document.getElementById('led-matrix');
         const ctx = canvas.getContext('2d');
@@ -825,7 +828,7 @@
             const key = font + '\u0000' + text;
             if (!textCache.has(key)) {
                 if (textCache.size > 200) textCache.clear();
-                const res = await fetch('/api/preview/text?' + new URLSearchParams({ font: font, text: text }));
+                const res = await fetch(BASE_PATH + '/api/preview/text?' + new URLSearchParams({ font: font, text: text }));
                 if (!res.ok) throw new Error('font ' + font + ': HTTP ' + res.status);
                 textCache.set(key, await res.json());
             }
@@ -867,7 +870,7 @@
         async function loadImage(name) {
             if (!imageCache.has(name)) {
                 if (imageCache.size > 8) imageCache.clear();
-                const res = await fetch('/api/preview/image/' + encodeURIComponent(name));
+                const res = await fetch(BASE_PATH + '/api/preview/image/' + encodeURIComponent(name));
                 if (!res.ok) throw new Error('image ' + name + ': HTTP ' + res.status);
                 const data = await res.json();
                 data.frames = data.frames.map(b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
@@ -1190,8 +1193,8 @@
 
         async function sync(initial) {
             const [events, panel] = await Promise.all([
-                fetch('/api/events').then(r => r.json()),   // newest first
-                fetch('/display').then(r => r.json())
+                fetch(BASE_PATH + '/api/events').then(r => r.json()),   // newest first
+                fetch(BASE_PATH + '/display').then(r => r.json())
             ]);
             const fresh = events.filter(ev => ev.id > lastId).reverse();
             if (events.length) lastId = Math.max(lastId, events[0].id);
@@ -1273,7 +1276,7 @@
             // Retried rather than left empty: a page loaded while the service
             // restarts would otherwise keep empty lists until reloaded.
             function loadOptions() {
-                fetch('/display/options').then(r => r.json()).then(function (o) {
+                fetch(BASE_PATH + '/display/options').then(r => r.json()).then(function (o) {
                     fill($('pc-kind'), o.kinds, 'text');
                     fill($('pc-font'), o.fonts, '6x10.bdf');
                     fill($('pc-image'), o.images, o.images[0]);
@@ -1302,7 +1305,7 @@
                 const buttons = form.querySelectorAll('button');
                 buttons.forEach(b => b.disabled = true);
                 try {
-                    const res = await fetch(path || '/display', { method: method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+                    const res = await fetch(BASE_PATH + (path || '/display'), { method: method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
                     const data = await res.json().catch(() => ({}));
                     if (!res.ok) {
                         let detail = data.detail;
