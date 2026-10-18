@@ -11,6 +11,7 @@ Shows homerun2 notifications from Redis Streams on a 64x64 RGB LED matrix. The p
 - **7 display modes** — static text, scrolling text, ticker, image, animated GIF, table-tennis scoreboard, event card
 - **`/display` API** — put anything on the panel with `curl`, no Redis needed ([Testing with curl](testing-with-curl.md))
 - **HTMX web simulator** — 64x64 canvas that draws what the panel draws (same fonts, frames and timing), with real-time SSE updates
+- **Big-screen view** — `/wall`: the same events on a large virtual LED matrix for a TV, with high-resolution GIFs (see the README)
 - **Configurable modes** — `led` (hardware), `web` (simulator), `full` (both), `standalone` (panel + simulator driven by the API, no Redis)
 - **KCL deployment** — Kubernetes manifests with security hardening
 

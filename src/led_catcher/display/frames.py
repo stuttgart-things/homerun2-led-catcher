@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 # through more GIFs than this re-decodes, which is slower but not unbounded.
 ANIMATION_CACHE_SIZE = 4
 
+PREVIEW_CACHE_SIZE = 2
+"""Animations kept prepared for the big-screen view (/wall), in a cache of
+their own: a wall-sized GIF must not evict the frames the panel is playing."""
+
 DEFAULT_FRAME_DELAY = 0.05
 """Delay for a frame that declares none — what the old code assumed for all of them."""
 
@@ -85,6 +89,27 @@ def _frame_delay(info: dict) -> float:
 @lru_cache(maxsize=ANIMATION_CACHE_SIZE)
 def _prepare(path: str, width: int, height: int, fingerprint: tuple[int, int]) -> Animation:
     """Decode and scale every frame. `fingerprint` re-decodes an edited file."""
+    return _decode(path, width, height)
+
+
+@lru_cache(maxsize=PREVIEW_CACHE_SIZE)
+def _prepare_preview(path: str, width: int, height: int, fingerprint: tuple[int, int]) -> Animation:
+    return _decode(path, width, height, crisp=True)
+
+
+def _blown_up(image: Image.Image, width: int, height: int) -> Image.Image:
+    """`image` enlarged by the largest whole factor that fits, pixel for pixel.
+
+    A 64x64 GIF made for the panel, smoothed up to a 144-row grid, is a blur;
+    enlarged 2x first, it keeps its pixels and only the remainder is smoothed.
+    """
+    factor = min(width // image.width, height // image.height)
+    if factor < 2:
+        return image
+    return image.convert("RGB").resize((image.width * factor, image.height * factor), Image.NEAREST)
+
+
+def _decode(path: str, width: int, height: int, crisp: bool = False) -> Animation:
     frames: list[Image.Image] = []
     delays: list[float] = []
 
@@ -94,7 +119,8 @@ def _prepare(path: str, width: int, height: int, fingerprint: tuple[int, int]) -
         frame_count = getattr(source, "n_frames", 1)
         for index in range(frame_count):
             source.seek(index)
-            frames.append(fit_to_panel(source, width, height))
+            frame = _blown_up(source, width, height) if crisp else source
+            frames.append(fit_to_panel(frame, width, height))
             # Pillow refreshes info on seek, so this is the frame's own delay
             # rather than the first frame's applied to all of them.
             delays.append(_frame_delay(source.info))
@@ -103,16 +129,19 @@ def _prepare(path: str, width: int, height: int, fingerprint: tuple[int, int]) -
     return Animation(path=path, frames=tuple(frames), delays=tuple(delays))
 
 
-def load_animation(path: Path | str, width: int, height: int) -> Animation | None:
+def load_animation(path: Path | str, width: int, height: int, *, preview: bool = False) -> Animation | None:
     """Frames of `path`, scaled for a `width` x `height` panel. None if unreadable.
 
     Never raises: an image the display cannot decode is worth a log line and a
-    fallback, not taking the consumer down.
+    fallback, not taking the consumer down. With `preview` the frames are
+    cached apart from the panel's (see PREVIEW_CACHE_SIZE) and enlarged pixel
+    for pixel before they are fitted (`_blown_up`).
     """
     path = Path(path)
+    prepare = _prepare_preview if preview else _prepare
     try:
         stat = path.stat()
-        return _prepare(str(path), width, height, (stat.st_mtime_ns, stat.st_size))
+        return prepare(str(path), width, height, (stat.st_mtime_ns, stat.st_size))
     except (OSError, ValueError) as exc:
         logger.warning("cannot prepare %s for display: %s", path, exc)
         return None
@@ -121,3 +150,4 @@ def load_animation(path: Path | str, width: int, height: int) -> Animation | Non
 def clear_animation_cache() -> None:
     """Drop every prepared animation. For tests, and for freeing the frames."""
     _prepare.cache_clear()
+    _prepare_preview.cache_clear()
