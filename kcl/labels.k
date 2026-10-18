@@ -15,6 +15,7 @@ _redisPassword = option("config.redisPassword")
 _apiToken = option("config.apiToken")
 _healthPort = option("config.healthPort")
 _ledMode = option("config.ledMode")
+_basePath = option("config.basePath")
 _httpRouteEnabled = option("config.httpRouteEnabled")
 _httpRouteParentRefName = option("config.httpRouteParentRefName")
 _httpRouteParentRefNamespace = option("config.httpRouteParentRefNamespace")
@@ -44,6 +45,8 @@ config: schema.LedCatcher = schema.LedCatcher {
         healthPort = _healthPort
     if _ledMode:
         ledMode = _ledMode
+    if _basePath:
+        basePath = _basePath
     if _httpRouteEnabled:
         httpRouteEnabled = _httpRouteEnabled in [True, "True", "true"]
     if _httpRouteParentRefName:
