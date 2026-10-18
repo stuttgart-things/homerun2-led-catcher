@@ -111,7 +111,8 @@ def create_web_app(
         response.headers["Cache-Control"] = "no-store"
         template = (TEMPLATES_DIR / "wall.html").read_text()
         return (
-            template.replace("{{ version }}", html.escape(version))
+            template.replace("{{ base_path }}", base_path)
+            .replace("{{ version }}", html.escape(version))
             .replace("{{ commit }}", html.escape(commit[:7] if len(commit) > 7 else commit))
             .replace("{{ mode }}", html.escape(mode))
         )

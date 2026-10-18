@@ -66,11 +66,20 @@ def _app(base_path: str):
     )
 
 
-# Absolute same-origin URLs in the page: attributes and string literals that
-# start with a single "/" (not "//", which is protocol-relative).
+# Absolute same-origin URLs in a page: URL attributes, and string literals in
+# the script that name a path ("/api/...", not "//" or a lone "/" glyph key)
+# and are passed to fetch(), EventSource or a helper, or assigned. A literal
+# joined to BASE_PATH ("BASE_PATH + '/api'") is not preceded by any of these.
 _ROOT_URL = re.compile(
-    r"""(?:(?:sse-connect|hx-get|hx-post|hx-put|hx-delete|href|src|action)="|fetch\(['"])(/(?!/)[^"']*)"""
+    r"""(?:sse-connect|hx-get|hx-post|hx-put|hx-delete|href|src|action)="(/(?!/)[^"]*)"""
+    r"""|[(=,]\s*['"](/[A-Za-z][^"'\s]*)"""
 )
+
+
+def _unprefixed(page: str) -> list[str]:
+    """URLs in ``page`` that miss the /led prefix; the BASE_PATH constant itself is fine."""
+    urls = [attr or literal for attr, literal in _ROOT_URL.findall(page)]
+    return [url for url in urls if url != "/led" and not url.startswith("/led/")]
 
 
 async def test_page_points_every_url_at_the_base_path():
@@ -84,8 +93,20 @@ async def test_page_points_every_url_at_the_base_path():
     assert "const BASE_PATH = '/led';" in page
     assert 'hx-post="/led/api/events/' in page
     assert 'hx-post="/led/ui/streams"' in page
-    unprefixed = [url for url in _ROOT_URL.findall(page) if not url.startswith("/led/")]
-    assert not unprefixed
+    assert 'href="/led/wall"' in page
+    assert not _unprefixed(page)
+
+
+async def test_wall_points_every_url_at_the_base_path():
+    app = _mount_base_path(_app("/led"), "/led")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/led/wall")
+    assert resp.status_code == 200
+    page = resp.text
+    assert "{{ base_path }}" not in page
+    assert "const BASE_PATH = '/led';" in page
+    assert 'href="/led/"' in page
+    assert not _unprefixed(page)
 
 
 async def test_without_a_base_path_the_page_is_unchanged():

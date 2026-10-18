@@ -470,7 +470,7 @@
                     hx-swap="innerHTML">{{ total_events }}</strong>
             </div>
             <div class="stat-badge">Mode: <strong>{{ mode }}</strong></div>
-            <a class="stat-badge wall-link" href="/wall" target="_blank" rel="noopener"
+            <a class="stat-badge wall-link" href="{{ base_path }}/wall" target="_blank" rel="noopener"
                title="The events on a large virtual matrix, for a TV">Big screen ↗</a>
             <div class="stat-badge stream-badge"
                  id="streams-control"
@@ -1310,7 +1310,7 @@
                 const buttons = form.querySelectorAll('button');
                 buttons.forEach(b => b.disabled = true);
                 try {
-                    const res = await fetch(BASE_PATH + (path || '/display'), { method: method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+                    const res = await fetch(path || BASE_PATH + '/display', { method: method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
                     const data = await res.json().catch(() => ({}));
                     if (!res.ok) {
                         let detail = data.detail;
@@ -1345,7 +1345,7 @@
                 const mode = $('pc-idle').value;
                 const body = { mode: mode };
                 if (mode !== 'off') body.color = hexToRgb($('pc-idle-color').value);
-                send('PUT', body, '/display/idle', 'idle screen: ' + mode);
+                send('PUT', body, BASE_PATH + '/display/idle', 'idle screen: ' + mode);
             });
         })();
     </script>
