@@ -78,6 +78,9 @@
 
         .stat-badge strong { color: var(--accent-orange); }
 
+        .wall-link { text-decoration: none; }
+        .wall-link:hover { background: rgba(255,255,255,0.25); }
+
         /* Stream control */
         .stream-badge {
             display: flex;
@@ -467,6 +470,8 @@
                     hx-swap="innerHTML">{{ total_events }}</strong>
             </div>
             <div class="stat-badge">Mode: <strong>{{ mode }}</strong></div>
+            <a class="stat-badge wall-link" href="/wall" target="_blank" rel="noopener"
+               title="The events on a large virtual matrix, for a TV">Big screen ↗</a>
             <div class="stat-badge stream-badge"
                  id="streams-control"
                  sse-swap="streams-update"

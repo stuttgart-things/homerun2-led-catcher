@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HOMERUN2 LED WALL</title>
+    <style>
+        :root { color-scheme: dark; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            color: #94a3b8;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+        }
+        body.idle { cursor: none; }
+        canvas#wall { display: block; width: 100vw; height: 100vh; }
+
+        /* Shown on load and on mouse movement, gone after a few seconds:
+           the TV shows the matrix and nothing else. */
+        .hud, .offline {
+            position: fixed;
+            left: 16px;
+            bottom: 16px;
+            font-size: 12px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid #334155;
+            transition: opacity 0.6s;
+        }
+        .hud a { color: #8b5cf6; text-decoration: none; }
+        body.idle .hud { opacity: 0; pointer-events: none; }
+        .offline { left: auto; right: 16px; color: #f59e0b; border-color: #f59e0b; }
+        .offline[hidden] { display: none; }
+    </style>
+</head>
+<body>
+    <canvas id="wall"></canvas>
+    <div class="hud" id="hud">
+        HOMERUN<sup>2</sup> LED WALL · <span id="hud-grid"></span> · {{ mode }} · {{ version }} ({{ commit }})
+        · double-click or <kbd>f</kbd>: fullscreen · <a href="/">simulator</a>
+    </div>
+    <div class="offline" id="offline" hidden>reconnecting…</div>
+
+    <script>
+        'use strict';
+        // The big-screen view (/wall). Follows the same events as the
+        // simulator at /, but on a larger virtual matrix: text, cards and the
+        // clock are laid out again for the grid, images and GIFs are prepared
+        // at its size by the panel's own load_animation. It is not a mirror of
+        // the 64x64 panel — that is what / is for — but it keeps the panel's
+        // order and timing: one display at a time, newest wins, the same
+        // durations, holds and idle screen (display/worker.py).
+        //
+        // ?rows=144 (default) sets the height in LEDs, ?cols= the width
+        // (default: the screen's aspect ratio), ?glow=0 turns the bloom off.
+
+        // ---- the grid ----
+        const params = new URLSearchParams(location.search);
+        const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+        // web/preview.py MAX_PREVIEW_WIDTH / MAX_PREVIEW_HEIGHT
+        const MAX_W = 384, MAX_H = 216;
+        const H = clamp(parseInt(params.get('rows'), 10) || 144, 32, MAX_H);
+        const W = clamp(parseInt(params.get('cols'), 10)
+                        || Math.round(H * window.innerWidth / Math.max(1, window.innerHeight)), 32, MAX_W);
+        const GLOW = params.get('glow') !== '0';
+        const PANEL = 64;
+        // LEDs per pixel for what is laid out for the 64x64 panel (the
+        // scoreboard) and for the card's chrome.
+        const K = Math.max(1, Math.floor(Math.min(W, H) / PANEL));
+
+        const SCROLL_STEP_MS = 30;   // modes._scroll_text: 1px per 30ms on the panel
+        const FRAME_MS = 16;
+        const TICKER_LOOPS = 3;      // modes._ticker_text
+        const HOLDING_KINDS = ['static', 'image', 'score', 'card'];
+        const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        // display/card.py
+        const COLOR_HEADER_TEXT = [0, 0, 0];
+        const COLOR_TITLE = [230, 230, 230];
+        const COLOR_DIM = [110, 110, 110];
+        const COLOR_DIVIDER = [50, 50, 50];
+        const TITLE_FONTS = ['10x20.bdf', '7x13.bdf', '6x10.bdf', '5x7.bdf', '4x6.bdf'];
+        const CLOCK_DIM = 0.6;       // display/clock.py DATE_DIM
+
+        document.getElementById('hud-grid').textContent = W + '×' + H + ' LEDs';
+
+        // ---- the framebuffer: one RGBA pixel per LED, alpha 0 when dark ----
+        const small = document.createElement('canvas');
+        small.width = W;
+        small.height = H;
+        const smallCtx = small.getContext('2d');
+        const image = smallCtx.createImageData(W, H);
+        const fb = image.data;
+        let dirty = true;
+
+        function clear() {
+            fb.fill(0);
+            dirty = true;
+        }
+
+        function set(x, y, r, g, b) {
+            if (x < 0 || y < 0 || x >= W || y >= H) return;
+            const i = (y * W + x) * 4;
+            fb[i] = r; fb[i + 1] = g; fb[i + 2] = b; fb[i + 3] = (r | g | b) ? 255 : 0;
+            dirty = true;
+        }
+
+        function fill(x, y, w, h, c) {
+            for (let yy = Math.max(0, y); yy < Math.min(H, y + h); yy++) {
+                for (let xx = Math.max(0, x); xx < Math.min(W, x + w); xx++) set(xx, yy, c[0], c[1], c[2]);
+            }
+        }
+
+        // ---- the screen: LEDs as dots, lit ones with a bloom ----
+        // A few whole-canvas operations a frame instead of one arc per LED,
+        // so a 256x144 grid scrolls as smoothly as the 64x64 one.
+        const screen = document.getElementById('wall');
+        const ctx = screen.getContext('2d');
+        const lit = document.createElement('canvas');
+        const litCtx = lit.getContext('2d');
+        const GLOW_SCALE = 4;
+        const glow = document.createElement('canvas');
+        glow.width = W * GLOW_SCALE;
+        glow.height = H * GLOW_SCALE;
+        const glowCtx = glow.getContext('2d');
+        const canBlur = 'filter' in glowCtx;
+        let pitch = 1, ox = 0, oy = 0, maskPattern = null, boardPattern = null;
+
+        function dotTile(color) {
+            const tile = document.createElement('canvas');
+            tile.width = tile.height = pitch;
+            const t = tile.getContext('2d');
+            t.fillStyle = color;
+            t.beginPath();
+            t.arc(pitch / 2, pitch / 2, Math.max(0.6, pitch * 0.4), 0, Math.PI * 2);
+            t.fill();
+            return tile;
+        }
+
+        function layout() {
+            const dpr = window.devicePixelRatio || 1;
+            screen.width = Math.round(window.innerWidth * dpr);
+            screen.height = Math.round(window.innerHeight * dpr);
+            // Whole device pixels a LED, so the dots fall on the same raster
+            // everywhere instead of beating against it.
+            pitch = Math.max(2, Math.floor(Math.min(screen.width / W, screen.height / H)));
+            ox = Math.floor((screen.width - W * pitch) / 2);
+            oy = Math.floor((screen.height - H * pitch) / 2);
+            lit.width = W * pitch;
+            lit.height = H * pitch;
+            maskPattern = litCtx.createPattern(dotTile('#fff'), 'repeat');
+            boardPattern = ctx.createPattern(dotTile('#141414'), 'repeat');
+            dirty = true;
+        }
+
+        function render() {
+            requestAnimationFrame(render);
+            if (!dirty) return;
+            dirty = false;
+            smallCtx.putImageData(image, 0, 0);
+
+            // The lit LEDs: the framebuffer blown up, cut to dots.
+            litCtx.globalCompositeOperation = 'copy';
+            litCtx.imageSmoothingEnabled = false;
+            litCtx.drawImage(small, 0, 0, lit.width, lit.height);
+            litCtx.globalCompositeOperation = 'destination-in';
+            litCtx.fillStyle = maskPattern;
+            litCtx.fillRect(0, 0, lit.width, lit.height);
+
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, screen.width, screen.height);
+            ctx.save();
+            ctx.translate(ox, oy);
+            ctx.fillStyle = boardPattern;
+            ctx.fillRect(0, 0, lit.width, lit.height);
+            ctx.restore();
+            ctx.drawImage(lit, ox, oy);
+
+            if (GLOW && canBlur) {
+                // Blurred at a few pixels a LED and stretched, which costs
+                // the same on a 4K screen as on a laptop.
+                glowCtx.globalCompositeOperation = 'copy';
+                glowCtx.imageSmoothingEnabled = true;
+                glowCtx.filter = 'blur(' + (GLOW_SCALE * 0.9) + 'px)';
+                glowCtx.drawImage(small, 0, 0, glow.width, glow.height);
+                glowCtx.filter = 'none';
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = 0.55;
+                ctx.imageSmoothingEnabled = true;
+                ctx.drawImage(glow, ox, oy, lit.width, lit.height);
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        function rgbOf(hex) {
+            return [1, 3, 5].map(i => parseInt((hex || '#ffffff').slice(i, i + 2), 16));
+        }
+
+        // ---- fonts: the panel's BDF glyphs, each font pixel s x s LEDs ----
+        const textCache = new Map();
+        async function loadText(font, text) {
+            const key = font + '\u0000' + text;
+            if (!textCache.has(key)) {
+                if (textCache.size > 200) textCache.clear();
+                const res = await fetch('/api/preview/text?' + new URLSearchParams({ font: font, text: text }));
+                if (!res.ok) throw new Error('font ' + font + ': HTTP ' + res.status);
+                textCache.set(key, await res.json());
+            }
+            return textCache.get(key);
+        }
+
+        function textWidth(f, text) {
+            let w = 0;
+            for (const ch of text) { const g = f.glyphs[ch.codePointAt(0)]; if (g) w += g[0]; }
+            return w;
+        }
+
+        // DrawGlyph, scaled: `top` is the top of the font box, in LEDs.
+        function drawText(f, x, top, rgb, text, s) {
+            const baseline = f.baseline;
+            let pen = 0;
+            for (const ch of text) {
+                const g = f.glyphs[ch.codePointAt(0)];
+                if (!g) continue;
+                const [advance, width, height, xOff, yOff, rows] = g;
+                const gTop = baseline - height - yOff;
+                for (let r = 0; r < rows.length; r++) {
+                    const bits = rows[r];
+                    if (!bits) continue;
+                    for (let c = 0; c < width; c++) {
+                        const col = xOff + c;
+                        if (col < 0 || col >= advance) continue;
+                        if (Math.floor(bits / Math.pow(2, width - 1 - c)) % 2 !== 1) continue;
+                        fill(x + (pen + col) * s, top + (gTop + r) * s, s, s, rgb);
+                    }
+                }
+                pen += advance;
+            }
+        }
+
+        const ELLIPSIS = '…';
+
+        // display/card.py wrap(): words to lines of at most maxWidth font
+        // pixels, a word wider than a line broken where it has to be.
+        function wrap(text, maxWidth, f, maxLines) {
+            const measure = t => textWidth(f, t);
+            const lines = [];
+            let current = '';
+            for (let word of text.split(/\s+/).filter(Boolean)) {
+                const candidate = current ? current + ' ' + word : word;
+                if (measure(candidate) <= maxWidth) { current = candidate; continue; }
+                if (current) { lines.push(current); current = ''; }
+                while (measure(word) > maxWidth && word.length > 1) {
+                    let head = word;
+                    while (head.length > 1 && measure(head) > maxWidth) head = head.slice(0, -1);
+                    lines.push(head);
+                    word = word.slice(head.length);
+                }
+                current = word;
+            }
+            if (current) lines.push(current);
+            if (lines.length <= maxLines) return [lines, true];
+            const kept = lines.slice(0, maxLines);
+            let last = kept[kept.length - 1];
+            while (last && measure(last + ELLIPSIS) > maxWidth) last = last.slice(0, -1);
+            kept[kept.length - 1] = last.trimEnd() + ELLIPSIS;
+            return [kept, false];
+        }
+
+        function truncate(text, maxWidth, f) {
+            if (textWidth(f, text) <= maxWidth) return text;
+            let cut = text;
+            while (cut && textWidth(f, cut.trimEnd() + ELLIPSIS) > maxWidth) cut = cut.slice(0, -1);
+            return cut ? cut.trimEnd() + ELLIPSIS : '';
+        }
+
+        // The largest setting of `text` that fits a boxW x boxH box: every
+        // font tried at every scale up to maxScale, the tallest glyphs win.
+        // When nothing fits, the smallest font at scale 1, cut short.
+        function fitText(fonts, text, boxW, boxH, maxScale) {
+            let best = null, fallback = null;
+            for (const f of fonts) {
+                for (let s = Math.max(1, maxScale); s >= 1; s--) {
+                    const gap = s;
+                    const maxLines = Math.floor((boxH + gap) / (f.height * s + gap));
+                    if (maxLines < 1) continue;
+                    const [lines, fitted] = wrap(text, Math.floor(boxW / s), f, maxLines);
+                    const option = { f: f, s: s, lines: lines, gap: gap };
+                    fallback = option;
+                    if (fitted && (!best || f.height * s > best.f.height * best.s)) best = option;
+                }
+            }
+            return best || fallback;
+        }
+
+        function drawFitted(fit, left, top, boxW, boxH, rgb, centred) {
+            const { f, s, lines, gap } = fit;
+            const blockH = lines.length * f.height * s + (lines.length - 1) * gap;
+            let y = top + (centred ? Math.floor((boxH - blockH) / 2) : 0);
+            for (const line of lines) {
+                const w = textWidth(f, line) * s;
+                const x = centred ? left + Math.floor((boxW - w) / 2) : left;
+                drawText(f, x, y, rgb, line, s);
+                y += f.height * s + gap;
+            }
+        }
+
+        // ---- frames: images and GIFs at the grid's size, the scoreboard at 64 ----
+        const frameCache = new Map();
+        async function loadFrames(url) {
+            if (!frameCache.has(url)) {
+                if (frameCache.size > 6) frameCache.clear();
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(url + ': HTTP ' + res.status);
+                const data = await res.json();
+                data.frames = data.frames.map(b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
+                frameCache.set(url, data);
+            }
+            return frameCache.get(url);
+        }
+
+        function drawFrame(bytes, fw, fh, s, x0, y0) {
+            clear();
+            for (let y = 0, p = 0; y < fh; y++) {
+                for (let x = 0; x < fw; x++, p += 3) {
+                    const r = bytes[p], g = bytes[p + 1], b = bytes[p + 2];
+                    if (!(r | g | b)) continue;
+                    if (s === 1) set(x0 + x, y0 + y, r, g, b);
+                    else fill(x0 + x * s, y0 + y * s, s, s, [r, g, b]);
+                }
+            }
+        }
+
+        // ---- the worker: one display at a time, newest wins ----
+        // The same rules as the simulator's and display/worker.py's.
+        class Cancelled extends Error {}
+        let current = null;   // {token, held, idle}
+        let pending = null;
+        let pumping = false;
+        let idleScreen = null;
+
+        function cancel(token) {
+            token.cancelled = true;
+            if (token.wake) { const wake = token.wake; token.wake = null; wake(); }
+        }
+
+        function sleep(token, ms) {
+            return new Promise((resolve, reject) => {
+                if (token.cancelled) return reject(new Cancelled());
+                const timer = setTimeout(() => { token.wake = null; resolve(); }, Math.max(0, ms));
+                token.wake = () => { clearTimeout(timer); reject(new Cancelled()); };
+            });
+        }
+
+        function wait(token, seconds, hold) {
+            if (!hold) return sleep(token, seconds * 1000);
+            current.held = true;
+            if (pending) return Promise.reject(new Cancelled());
+            return new Promise((_, reject) => { token.wake = () => reject(new Cancelled()); });
+        }
+
+        async function guard(token, promise) {
+            const value = await promise;
+            if (token.cancelled) throw new Cancelled();
+            return value;
+        }
+
+        function submit(ev) {
+            if (ev.kind === 'clear') {
+                pending = null;
+                if (current) cancel(current.token);
+                clear();
+                if (!pumping) pump();
+                return;
+            }
+            pending = ev;
+            if (current && (current.held || current.idle)) cancel(current.token);
+            if (!pumping) pump();
+        }
+
+        function setIdle(idle) {
+            const next = idle && idle.mode !== 'off' ? idle : null;
+            if (JSON.stringify(next) === JSON.stringify(idleScreen)) return;
+            idleScreen = next;
+            if (current && current.idle) {
+                cancel(current.token);
+                if (!next) clear();
+            }
+            if (!pumping) pump();
+        }
+
+        async function pump() {
+            pumping = true;
+            for (;;) {
+                const ev = pending;
+                const idle = !ev && idleScreen !== null;
+                if (!ev && !idle) break;
+                pending = null;
+                const token = { cancelled: false, wake: null };
+                current = { token: token, held: false, idle: idle };
+                try {
+                    await (idle ? idleClock(token) : play(ev, token));
+                } catch (e) {
+                    if (!(e instanceof Cancelled)) console.error(idle ? 'idle screen failed' : 'display failed', ev, e);
+                    if (idle && !(e instanceof Cancelled)) { idleScreen = null; clear(); }
+                }
+                current = null;
+            }
+            pumping = false;
+        }
+
+        // ---- the modes ----
+        function play(ev, token) {
+            switch ((ev.kind || '').toLowerCase()) {
+                case 'text': return scrollText(ev, token, 1);
+                case 'ticker': return scrollText(ev, token, TICKER_LOOPS);
+                case 'image': return showImage(ev, token);
+                case 'gif': return showGif(ev, token);
+                case 'score': return showScore(ev, token);
+                case 'card': return showCard(ev, token);
+                default: return staticText(ev, token);
+            }
+        }
+
+        async function finish(ev, token) {
+            await wait(token, ev.duration, ev.hold);
+            if (ev.hold) return;
+            clear();
+        }
+
+        // A still text gets the whole grid: wrapped, as large as it fits.
+        async function staticText(ev, token) {
+            const text = ev.text || '---';
+            const f = await guard(token, loadText(ev.font, text));
+            const margin = 2 * K;
+            const boxW = W - 2 * margin, boxH = H - 2 * margin;
+            const fit = fitText([f], text, boxW, boxH, Math.floor(H * 0.6 / f.height));
+            clear();
+            drawFitted(fit, margin, margin, boxW, boxH, rgbOf(ev.color), true);
+            await finish(ev, token);
+        }
+
+        // Scaled to fill about half the height and moved s LEDs a step, so a
+        // glyph crosses at the panel's pace.
+        async function scrollText(ev, token, loops) {
+            const text = ev.text || '---';
+            const f = await guard(token, loadText(ev.font, text));
+            const s = Math.max(1, Math.floor(H * 0.45 / f.height));
+            const rgb = rgbOf(ev.color);
+            const top = Math.floor((H - f.height * s) / 2);
+            const width = f.width * s;
+            const speed = s / SCROLL_STEP_MS;
+            for (let loop = 0; loop < loops; loop++) {
+                const start = performance.now();
+                for (;;) {
+                    const x = W - Math.floor((performance.now() - start) * speed);
+                    if (x <= -width) break;
+                    clear();
+                    drawText(f, x, top, rgb, text, s);
+                    await sleep(token, FRAME_MS);
+                }
+            }
+            clear();
+        }
+
+        async function frames(ev, token) {
+            try {
+                const url = '/api/preview/image/' + encodeURIComponent(ev.image) + '?' + new URLSearchParams({ width: W, height: H });
+                return await guard(token, loadFrames(url));
+            } catch (e) {
+                if (e instanceof Cancelled) throw e;
+                return null;   // the panel falls back to static text
+            }
+        }
+
+        async function showImage(ev, token, loaded) {
+            const img = loaded || await frames(ev, token);
+            if (!img) return staticText(ev, token);
+            drawFrame(img.frames[0], img.width, img.height, 1, 0, 0);
+            await finish(ev, token);
+        }
+
+        async function showGif(ev, token) {
+            const img = await frames(ev, token);
+            if (!img) return staticText(ev, token);
+            if (!img.animated) return showImage(ev, token, img);
+            const start = performance.now();
+            const elapsed = () => (performance.now() - start) / 1000;
+            let scheduled = 0, index = 0;
+            while (scheduled < ev.duration && elapsed() < ev.duration) {
+                const shownAt = performance.now();
+                drawFrame(img.frames[index], img.width, img.height, 1, 0, 0);
+                const delay = img.delays[index];
+                scheduled += delay;
+                const spent = (performance.now() - shownAt) / 1000;
+                const remaining = ev.duration - elapsed();
+                await sleep(token, Math.max(0, Math.min(delay - spent, remaining)) * 1000);
+                index = (index + 1) % img.frames.length;
+            }
+            clear();
+        }
+
+        // Laid out for 64x64 by display/score.py and drawn by it on the
+        // server; here only scaled up and centred.
+        async function showScore(ev, token) {
+            let board;
+            try {
+                board = await guard(token, loadFrames('/api/preview/score?' + new URLSearchParams({ text: ev.text || '' })));
+            } catch (e) {
+                if (e instanceof Cancelled) throw e;
+                return staticText(ev, token);
+            }
+            drawFrame(board.frames[0], PANEL, PANEL, K,
+                      Math.floor((W - PANEL * K) / 2), Math.floor((H - PANEL * K) / 2));
+            await finish(ev, token);
+        }
+
+        // ---- the card, laid out for the grid ----
+        // The panel's card (display/card.py) on more LEDs: the header bar in
+        // the severity colour with the system and the time, the title as
+        // large as it fits, the message as a ticker, author and tags below.
+        // From the card's content, not its 64-column lines, so nothing is cut
+        // that the wall has room for.
+        async function showCard(ev, token) {
+            const content = ev.card && ev.card.content;
+            if (!content) return staticText(ev, token);
+            const color = rgbOf(ev.color);
+            const pad = 2 * K;
+            const system = (content.system || '').toUpperCase();
+            const title = content.title || ev.text || '---';
+            const message = content.message || '';
+            const tags = (content.tags || '').split(',').map(t => t.trim()).filter(Boolean).join(' ');
+            const author = content.author || '';
+
+            const [hf, ff, tf, ...titleFonts] = await guard(token, Promise.all([
+                loadText('6x10.bdf', system + (content.time || '') + ELLIPSIS),
+                loadText('5x7.bdf', author + tags + ELLIPSIS),
+                loadText('7x13.bdf', message),
+                ...TITLE_FONTS.map(name => loadText(name, title + ELLIPSIS))
+            ]));
+
+            const headerH = hf.height * K + 2 * pad;
+            const hasFooter = !!(author || tags);
+            const footerTop = H - pad - ff.height * K;
+            const dividerY = hasFooter ? footerTop - pad : H;
+            const tickerTop = message ? dividerY - pad - tf.height * K : dividerY;
+            const titleTop = headerH + pad;
+            const titleH = Math.max(1, tickerTop - pad - titleTop);
+            const boxW = W - 2 * pad;
+            const fit = fitText(titleFonts, title, boxW, titleH, 3 * K);
+            const tickerW = textWidth(tf, message) * K;
+            const scrolls = tickerW > boxW;
+
+            const time = content.time || '';
+            const timeW = textWidth(hf, time) * K;
+            const sys = truncate(system, Math.floor((boxW - (time ? timeW + pad * 2 : 0)) / K), hf);
+            const tagRoom = Math.floor((boxW - textWidth(ff, author) * K - pad * 2) / K);
+            const shownTags = tags && tagRoom > 0 ? truncate(tags, tagRoom, ff) : '';
+
+            const frame = (x) => {
+                clear();
+                fill(0, 0, W, headerH, color);
+                drawText(hf, pad, pad, COLOR_HEADER_TEXT, sys, K);
+                if (time) drawText(hf, W - pad - timeW, pad, COLOR_HEADER_TEXT, time, K);
+                drawFitted(fit, pad, titleTop, boxW, titleH, COLOR_TITLE, false);
+                if (message) drawText(tf, x, tickerTop, color, message, K);
+                if (hasFooter) {
+                    fill(0, dividerY, W, Math.max(1, Math.floor(K / 2)), COLOR_DIVIDER);
+                    drawText(ff, pad, footerTop, COLOR_DIM, truncate(author, Math.floor(boxW / K), ff), K);
+                    if (shownTags) drawText(ff, W - pad - textWidth(ff, shownTags) * K, footerTop, COLOR_DIM, shownTags, K);
+                }
+            };
+
+            if (!scrolls) {
+                frame(pad);
+                await finish(ev, token);
+                return;
+            }
+            const speed = K / SCROLL_STEP_MS;
+            const span = W + tickerW;
+            const start = performance.now();
+            for (;;) {
+                const now = performance.now();
+                // card.next_ticker_x: from the left edge out, then in again from the right.
+                const moved = Math.floor((now - start) * speed);
+                const x = moved <= pad + tickerW ? pad - moved : W - ((moved - pad - tickerW) % span);
+                frame(x);
+                if (ev.hold) {
+                    current.held = true;
+                    if (pending) throw new Cancelled();
+                    await sleep(token, FRAME_MS);
+                    continue;
+                }
+                const elapsed = (now - start) / 1000;
+                if (elapsed >= ev.duration) break;
+                await sleep(token, Math.min(FRAME_MS, (ev.duration - elapsed) * 1000));
+            }
+            clear();
+        }
+
+        // ---- the idle screen: display/clock.py, as large as the grid allows ----
+        function clockTexts(nowMs, utcOffset) {
+            // The panel's wall clock, not the browser's.
+            const d = new Date(nowMs + utcOffset * 1000);
+            const pad = n => String(n).padStart(2, '0');
+            const colon = Math.floor(nowMs / 1000) % 2 === 0 ? ':' : ' ';
+            return [
+                pad(d.getUTCHours()) + colon + pad(d.getUTCMinutes()),
+                WEEKDAYS[(d.getUTCDay() + 6) % 7] + '  ' + pad(d.getUTCDate()) + '.' + pad(d.getUTCMonth() + 1) + '.' + d.getUTCFullYear()
+            ];
+        }
+
+        async function idleClock(token) {
+            const idle = idleScreen;
+            const [tf, df] = await guard(token, Promise.all([
+                loadText('10x20.bdf', '0123456789 :'),
+                loadText('6x10.bdf', '0123456789 .' + WEEKDAYS.join(''))
+            ]));
+            const dim = idle.color.map(c => Math.floor(c * CLOCK_DIM));
+            const ts = Math.max(1, Math.min(Math.floor(H * 0.5 / tf.height), Math.floor(W * 0.9 / textWidth(tf, '00:00'))));
+            const sample = 'Wednesday  00.00.0000';
+            const ds = Math.max(1, Math.min(Math.ceil(ts / 2), Math.floor(W * 0.9 / textWidth(df, sample))));
+            const gap = 2 * ts;
+            const top = Math.floor((H - (tf.height * ts + gap + df.height * ds)) / 2);
+            let drawn = null;
+            for (;;) {
+                const now = Date.now();
+                const [time, date] = clockTexts(now, idle.utcOffset);
+                if (time + date !== drawn) {
+                    clear();
+                    drawText(tf, Math.floor((W - textWidth(tf, time) * ts) / 2), top, idle.color, time, ts);
+                    drawText(df, Math.floor((W - textWidth(df, date) * ds) / 2), top + tf.height * ts + gap, dim, date, ds);
+                    drawn = time + date;
+                }
+                await sleep(token, 1000 - (now % 1000) + 5);
+            }
+        }
+
+        // ---- following the events ----
+        let lastId = 0;
+        let syncing = Promise.resolve();
+
+        function drawable(ev) {
+            return ev.kind === 'clear' || ev.matched !== false;
+        }
+
+        async function sync(initial) {
+            const [events, panel] = await Promise.all([
+                fetch('/api/events').then(r => r.json()),   // newest first
+                fetch('/display').then(r => r.ok ? r.json() : {}).catch(() => ({}))
+            ]);
+            const fresh = events.filter(ev => ev.id > lastId).reverse();
+            if (events.length) lastId = Math.max(lastId, events[0].id);
+            if (!initial) {
+                fresh.filter(drawable).forEach(submit);
+            } else {
+                // Opened mid-way: only what is still up on the panel.
+                const last = fresh.filter(drawable).pop();
+                const held = last && last.hold && HOLDING_KINDS.includes(last.kind);
+                if (last && last.kind !== 'clear' && (held || Date.now() / 1000 - last.at < last.duration)) submit(last);
+            }
+            setIdle(panel.idle);
+        }
+
+        function resync(initial) {
+            syncing = syncing.then(() => sync(initial)).catch(e => console.error('event sync failed', e));
+        }
+
+        layout();
+        window.addEventListener('resize', layout);
+        clear();
+        requestAnimationFrame(render);
+        resync(true);
+
+        // One stream per tab, as on the simulator page (#106).
+        const offline = document.getElementById('offline');
+        const stream = new EventSource('/api/events/stream');
+        stream.addEventListener('events-update', () => resync(false));
+        stream.addEventListener('open', () => { offline.hidden = true; });
+        stream.addEventListener('error', () => { offline.hidden = false; });
+
+        // ---- chrome: fullscreen, and a HUD that gets out of the way ----
+        function fullscreen() {
+            const el = document.documentElement;
+            if (document.fullscreenElement) document.exitFullscreen();
+            else if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+        }
+        document.addEventListener('dblclick', fullscreen);
+        document.addEventListener('keydown', e => { if (e.key === 'f') fullscreen(); });
+
+        let hudTimer = null;
+        function wake() {
+            document.body.classList.remove('idle');
+            clearTimeout(hudTimer);
+            hudTimer = setTimeout(() => document.body.classList.add('idle'), 4000);
+        }
+        document.addEventListener('mousemove', wake);
+        wake();
+    </script>
+</body>
+</html>

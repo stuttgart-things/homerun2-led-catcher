@@ -133,6 +133,28 @@ curl -X DELETE http://localhost:8080/display -H 'Authorization: Bearer dev'     
 The web simulator at the same address draws what the panel draws (same fonts, frames and
 timing), and has a **Panel control** form that uses the same API.
 
+### Big screen (`/wall`)
+
+For a TV or a projector, `/wall` (linked as **Big screen** in the simulator header) shows the
+same events on a much larger virtual LED matrix, fullscreen and without any chrome — double-click
+or press `f` for fullscreen. It follows the panel's order and timing (newest wins, durations,
+holds, idle clock) but is laid out for its own size rather than mirroring the 64x64 panel:
+
+- text is wrapped and set as large as it fits, scrolling text fills half the height
+- cards get a full-width header, the whole title and the message as a ticker
+- images and GIFs are prepared at the grid's size — drop a high-resolution GIF into
+  `visual_aid/` and the wall plays it in full detail while the panel gets it scaled down
+- the scoreboard is the panel's own, scaled up
+
+| Query | Default | |
+|-------|---------|-|
+| `rows` | `144` | Height in LEDs, 32–216 |
+| `cols` | from the screen's aspect ratio | Width in LEDs, 32–384 |
+| `glow` | `1` | `0` turns the bloom off, for slow hardware |
+
+e.g. `http://<host>:8080/wall?rows=108` for bigger LEDs. The wall is read-only; it is a view,
+not a second panel.
+
 ## Configuration
 
 All configuration is via environment variables:

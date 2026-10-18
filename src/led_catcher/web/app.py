@@ -99,6 +99,23 @@ def create_web_app(
         )
         return page.replace("{{ streams_control }}", _render_streams_control(consumer, presets, base_path=base_path))
 
+    @app.get("/wall", response_class=HTMLResponse)
+    async def wall(response: Response):
+        """The big-screen view: the same events on a larger virtual matrix.
+
+        Read-only, no chrome — meant for a TV in fullscreen. Not a mirror of
+        the panel like ``/``: text, cards and the clock are laid out again for
+        the grid, and images and GIFs are prepared at its size. Cached as
+        little as the main page, for the same reason.
+        """
+        response.headers["Cache-Control"] = "no-store"
+        template = (TEMPLATES_DIR / "wall.html").read_text()
+        return (
+            template.replace("{{ version }}", html.escape(version))
+            .replace("{{ commit }}", html.escape(commit[:7] if len(commit) > 7 else commit))
+            .replace("{{ mode }}", html.escape(mode))
+        )
+
     @app.get("/events", response_class=HTMLResponse)
     async def events_partial():
         return HTMLResponse(_render_events(tracker, replayable=replay is not None, base_path=base_path))
