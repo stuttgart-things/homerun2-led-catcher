@@ -17,6 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from led_catcher.handlers.display_api import RateLimiter
 from led_catcher.web.events import EventTracker
+from led_catcher.web.fragments import create_fragments_router
 from led_catcher.web.preview import create_preview_router
 
 if TYPE_CHECKING:
@@ -72,6 +73,8 @@ def create_web_app(
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(create_preview_router())
+    # homerun2-portal composes these into its own page (web/fragments.py).
+    app.include_router(create_fragments_router(tracker, version, base_path))
 
     @app.get("/", response_class=HTMLResponse)
     async def index(response: Response):
