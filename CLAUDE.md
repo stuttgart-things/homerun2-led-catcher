@@ -93,6 +93,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/openapi.py` — generates `docs/openapi.yaml` (`task openapi`); the API entity in `catalog-info.yaml` points at it, and `tests/test_openapi.py` fails when it is stale
 - `src/led_catcher/display/worker.py` — display worker thread: newest wins, `blank()`, `showing`, the idle screen between displays
 - `src/led_catcher/web/app.py` — simulator routes, `/ui/streams` control partial, SSE generator
+- `src/led_catcher/web/fragments.py` — `/ui/manifest.json` and `/ui/fragment/events` for homerun2-portal: bare HTML styled by the portal's `hr-*` classes, every URL carries `BASE_PATH`
 - `src/led_catcher/web/preview.py` — `/api/preview/*`: BDF glyphs and prepared frames, so the canvas draws what the panel draws; frames at other sizes and the scoreboard frame for `/wall`
 - `src/led_catcher/web/templates/wall.html` — `/wall` big-screen view: a larger virtual matrix for a TV, laid out for its own size (not a panel mirror)
 - `src/led_catcher/config/settings.py` — Config dataclass, env loading, JSON log formatter

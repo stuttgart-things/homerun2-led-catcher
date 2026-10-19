@@ -72,6 +72,12 @@ itself, and every URL in the simulator page carries the prefix. `/` redirects
 to `/led/`. `/healthz` and `/health` answer at the root as well, so the probes
 need no change.
 
+Behind the portal, the service also offers its piece of the portal's
+overview: `/led/ui/manifest.json` lists the fragment `/led/ui/fragment/events`
+(the latest events on the matrix), which the portal loads into the LED card
+every 5 seconds. It is bare HTML styled by the portal's `hr-*` classes; the
+contract is described in the homerun2-portal README.
+
 ### With Redis Password
 
 ```yaml
