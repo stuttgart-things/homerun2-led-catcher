@@ -110,6 +110,18 @@ async def test_behind_the_portal_the_page_links_the_portal_tokens():
     assert _unprefixed(behind) == ["/static/homerun2-tokens.css"]
 
 
+async def test_the_page_switches_to_the_compact_header_inside_the_portal():
+    """In the portal's iframe a script sets hr-embedded before the first paint; the CSS keys on it."""
+    app = _mount_base_path(_app("/led"), "/led")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        page = (await client.get("/led/")).text
+    head = page.split("</head>")[0]
+    assert "window.self !== window.top" in head
+    assert head.index("classList.add('hr-embedded')") < head.index("<style>")
+    assert ".hr-embedded .header {" in head
+    assert '<span class="header-service">' in page
+
+
 async def test_wall_points_every_url_at_the_base_path():
     app = _mount_base_path(_app("/led"), "/led")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

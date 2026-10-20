@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HOMERUN2 LED CATCHER</title>
+    <script>
+        // In homerun2-portal's iframe the portal shows the brand and the
+        // service name: hr-embedded switches to the compact header. Set before
+        // the first paint, so the big banner never flashes.
+        if (window.self !== window.top) document.documentElement.classList.add('hr-embedded');
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
@@ -100,6 +106,34 @@
 
         .wall-link { text-decoration: none; }
         .wall-link:hover { background: rgba(255,255,255,0.25); }
+
+        /* The compact header inside homerun2-portal (README there, "Embedded
+           header"): one line on the portal's surface, no brand, the tool's
+           subtitle on the left and its stats and actions on the right. */
+        .hr-embedded .header {
+            font-family: var(--hr-font, system-ui, sans-serif);
+            background: var(--hr-surface);
+            border-bottom: 1px solid var(--hr-border);
+            min-height: 44px;
+            padding: 6px 16px;
+        }
+        .hr-embedded .header-title,
+        .hr-embedded .header-service { display: none; }
+        .hr-embedded .header-subtitle {
+            font-family: inherit;
+            font-size: 13px;
+            color: var(--hr-muted);
+            margin: 0;
+            text-transform: none;
+        }
+        .hr-embedded .stat-badge {
+            background: transparent;
+            border: 1px solid var(--hr-border);
+            padding: 3px 8px;
+            font-size: 12px;
+            color: var(--hr-text);
+        }
+        .hr-embedded .header-stats { gap: 8px; }
 
         /* Stream control */
         .stream-badge {
@@ -482,7 +516,7 @@
     <div class="header">
         <div>
             <div class="header-title">HOMERUN<sup>2</sup></div>
-            <div class="header-subtitle">led catcher - matrix simulator</div>
+            <div class="header-subtitle"><span class="header-service">led catcher - </span>Matrix simulator</div>
         </div>
         <div class="header-stats">
             <div class="stat-badge">
