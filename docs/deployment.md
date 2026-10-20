@@ -78,6 +78,17 @@ overview: `/led/ui/manifest.json` lists the fragment `/led/ui/fragment/events`
 every 5 seconds. It is bare HTML styled by the portal's `hr-*` classes; the
 contract is described in the homerun2-portal README.
 
+The simulator's colours are the homerun2 design tokens (`--hr-*`). The page
+carries a copy of them; when a request comes through the portal (it sets
+`X-Forwarded-Prefix`), the page also links the portal's
+`/static/homerun2-tokens.css`, so a palette change in the portal reaches the
+simulator as well. The `/wall` view keeps its black background.
+
+Inside the portal's iframe the simulator switches to the compact header the
+portal README describes ("Embedded header"): one line without the HOMERUN²
+banner, since the portal already shows the brand and the service name. Opened
+on its own, also through the portal's "Standalone" link, it keeps the banner.
+
 ### With Redis Password
 
 ```yaml

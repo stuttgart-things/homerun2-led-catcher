@@ -77,7 +77,7 @@ def create_web_app(
     app.include_router(create_fragments_router(tracker, version, base_path))
 
     @app.get("/", response_class=HTMLResponse)
-    async def index(response: Response):
+    async def index(request: Request, response: Response):
         # The page carries the canvas renderer inline, so its behaviour changes
         # with the release. Without this a tab left open across a deploy keeps
         # the old JavaScript while the event timeline, fed by SSE, stays
@@ -95,6 +95,7 @@ def create_web_app(
             .replace("{{ total_events }}", str(tracker.total))
             .replace("{{ mode }}", html.escape(mode))
             .replace("{{ control_panel }}", CONTROL_PANEL_HTML if display_api else "")
+            .replace("{{ portal_theme }}", _portal_theme(request))
             # User-supplied text from here on (message titles, POST /display),
             # so after every fixed placeholder: an earlier pass would let a
             # title containing one be rewritten by a later replace().
@@ -313,6 +314,21 @@ CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocompl
     </div>
     <div class="status" id="pc-status"></div>
 </form>"""
+
+
+# homerun2-portal serves the shared design tokens on its own origin; it sets
+# X-Forwarded-Prefix on everything it proxies.
+PORTAL_TOKENS_LINK = '<link rel="stylesheet" href="/static/homerun2-tokens.css">'
+
+
+def _portal_theme(request: Request) -> str:
+    """The portal's design tokens when the page came through the portal.
+
+    The page keeps its own copy of the tokens, so on its own it looks the
+    same; behind the portal the portal's file wins, and a palette change there
+    reaches this page too.
+    """
+    return PORTAL_TOKENS_LINK if request.headers.get("x-forwarded-prefix") else ""
 
 
 def _render_events(tracker: EventTracker, replayable: bool = False, base_path: str = "") -> str:

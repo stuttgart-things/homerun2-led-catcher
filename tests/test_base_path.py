@@ -16,7 +16,7 @@ from led_catcher.__main__ import _build_app, _mount_base_path
 from led_catcher.config.settings import Config, RedisConfig, parse_base_path
 from led_catcher.profile import Profile
 from led_catcher.web import EventTracker, LedEvent, create_web_app
-from led_catcher.web.app import _render_events, _render_streams_control, event_stream
+from led_catcher.web.app import PORTAL_TOKENS_LINK, _render_events, _render_streams_control, event_stream
 
 
 class _Consumer:
@@ -95,6 +95,31 @@ async def test_page_points_every_url_at_the_base_path():
     assert 'hx-post="/led/ui/streams"' in page
     assert 'href="/led/wall"' in page
     assert not _unprefixed(page)
+
+
+async def test_behind_the_portal_the_page_links_the_portal_tokens():
+    """The one root URL a page hands out on purpose: the portal's own tokens file."""
+    app = _mount_base_path(_app("/led"), "/led")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        alone = (await client.get("/led/")).text
+        behind = (await client.get("/led/", headers={"X-Forwarded-Prefix": "/led"})).text
+    assert "{{ portal_theme }}" not in alone
+    assert PORTAL_TOKENS_LINK not in alone
+    assert behind.count(PORTAL_TOKENS_LINK) == 1
+    assert behind.index(PORTAL_TOKENS_LINK) > behind.index("</style>")
+    assert _unprefixed(behind) == ["/static/homerun2-tokens.css"]
+
+
+async def test_the_page_switches_to_the_compact_header_inside_the_portal():
+    """In the portal's iframe a script sets hr-embedded before the first paint; the CSS keys on it."""
+    app = _mount_base_path(_app("/led"), "/led")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        page = (await client.get("/led/")).text
+    head = page.split("</head>")[0]
+    assert "window.self !== window.top" in head
+    assert head.index("classList.add('hr-embedded')") < head.index("<style>")
+    assert ".hr-embedded .header {" in head
+    assert '<span class="header-service">' in page
 
 
 async def test_wall_points_every_url_at_the_base_path():
