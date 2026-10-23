@@ -20,7 +20,7 @@ class FakeWorker:
     def __init__(self):
         self.submitted = []
 
-    def submit(self, config):
+    def submit(self, config, system="", title=""):
         self.submitted.append(config)
 
 

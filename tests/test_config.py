@@ -128,3 +128,20 @@ async def test_the_consumer_asks_for_that_socket_timeout():
         )
     finally:
         await consumer.shutdown()
+
+
+def test_display_queue_defaults_to_a_single_slot(monkeypatch):
+    monkeypatch.delenv("DISPLAY_QUEUE", raising=False)
+    assert load_config().display_queue == 1
+
+
+def test_display_queue_from_the_environment(monkeypatch):
+    monkeypatch.setenv("DISPLAY_QUEUE", "3")
+    assert load_config().display_queue == 3
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "many"])
+def test_a_bad_display_queue_fails_startup(monkeypatch, raw):
+    monkeypatch.setenv("DISPLAY_QUEUE", raw)
+    with pytest.raises(ValueError, match="DISPLAY_QUEUE"):
+        load_config()

@@ -99,6 +99,7 @@ class Config:
     ui_stream_presets: list[list[str]] = field(default_factory=list)
     idle: str = "off"  # the idle screen: off, clock (#115)
     idle_color: str | tuple[int, int, int] = "info"  # a colour name, resolved against the profile, or RGB
+    display_queue: int = 1  # displays that may wait for the panel; 1 = newest wins (#142)
     redis_startup_timeout: float = DEFAULT_REDIS_STARTUP_TIMEOUT
     log_format: str = "json"
     log_level: str = "info"
@@ -349,6 +350,7 @@ def load_config() -> Config:
         ui_stream_presets=parse_stream_presets(_getenv("UI_STREAM_PRESETS", ""), redis_cfg.streams),
         idle=parse_idle(_getenv("LED_IDLE", "")),
         idle_color=parse_color("LED_IDLE_COLOR", _getenv("LED_IDLE_COLOR", ""), "info"),
+        display_queue=_env_int("DISPLAY_QUEUE", 1, minimum=1),
         redis_startup_timeout=parse_redis_startup_timeout(_getenv("REDIS_STARTUP_TIMEOUT", "")),
         log_format=_getenv("LOG_FORMAT", "json"),
         log_level=_getenv("LOG_LEVEL", "info"),

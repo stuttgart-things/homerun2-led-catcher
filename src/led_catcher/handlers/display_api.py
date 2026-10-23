@@ -224,6 +224,10 @@ def create_display_router(
     async def get_display() -> dict:
         """Unauthenticated: it says nothing that is not already lit up in the room."""
         body = describe(worker.showing if worker is not None else None)
+        if worker is not None:
+            # DISPLAY_QUEUE, what waits in it now, and how many displays never
+            # reached the panel since startup (#142).
+            body["queue"] = {"size": worker.queue_size, "pending": worker.pending, "dropped": worker.superseded}
         body["idle"] = idle_body()
         body["writable"] = api.writable
         return body
@@ -274,7 +278,7 @@ def create_display_router(
     )
     async def post_display(body: DisplayRequest) -> dict:
         """Shown like a matched message: a held display gives way at once, a finite
-        one keeps its full duration, and the newest waiting display wins."""
+        one keeps its full duration, and what arrives meanwhile waits in ``DISPLAY_QUEUE``."""
         config = _to_config(body, palette, api.max_text)
         logger.info(
             "displaying from API: kind=%s hold=%s",
@@ -283,7 +287,7 @@ def create_display_router(
             extra={"kind": config.kind, "system": API_SYSTEM},
         )
         if worker is not None:
-            worker.submit(config)
+            worker.submit(config, system=API_SYSTEM, title=config.text)
         if tracker is not None:
             _record(tracker, config)
         return {"accepted": True, "panel": worker is not None, "display": describe_config(config)}

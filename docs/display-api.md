@@ -123,13 +123,17 @@ What is on the panel right now:
   "since": "2026-09-18T07:56:09.059991+00:00",
   "display": {"kind": "static", "text": "12:04", "image": "", "font": "6x10.bdf",
               "color": [0, 100, 255], "duration": 5.0, "hold": true},
+  "queue": {"size": 1, "pending": 0, "dropped": 2},
   "idle": {"mode": "clock", "color": [0, 100, 255], "active": false, "utcOffset": 7200},
   "writable": true
 }
 ```
 
 `idle.active` is true while the idle screen is what the panel shows. `utcOffset`
-is the panel's, in seconds east of UTC.
+is the panel's, in seconds east of UTC. `queue` is there whenever a panel is
+driven (not in `LED_MODE=web`): `size` is `DISPLAY_QUEUE`, `pending` what waits
+for the panel now, `dropped` how many displays never reached it since startup —
+replaced while waiting, pushed out of a full queue, or cleared by `DELETE`.
 
 ## Idle screen: the clock
 

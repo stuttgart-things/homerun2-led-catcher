@@ -193,6 +193,7 @@ All configuration is via environment variables:
 | `LED_PWM_BITS` | *(library default)* | PWM bits, 1–11. Lower trades colour depth for refresh rate |
 | `LED_IDLE` | `off` | Idle screen: `clock` shows the time whenever nothing else is on the panel, `off` leaves it dark. Switchable at runtime with `PUT /display/idle` |
 | `LED_IDLE_COLOR` | `info` | Colour of the idle clock: a profile colour name or `r,g,b` |
+| `DISPLAY_QUEUE` | `1` | Displays that may wait while a finite one is on the panel. `1`: a single slot, the newest wins. More: kept in order, and when full the oldest waiting one is dropped. A held display never waits in front of anything. See [the display worker](docs/architecture.md#the-display-worker) |
 
 ## Runtime Stream Switching
 
