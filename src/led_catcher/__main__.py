@@ -124,6 +124,8 @@ def _build_app(
             replay=replay,
             replay_rate_limit=cfg.api.rate_limit,
             base_path=cfg.base_path,
+            # The canvas queues like the worker, at the same length (#144).
+            display_queue=cfg.display_queue,
         )
         app.get("/healthz")(health_app.routes[0].endpoint)
         app.get("/health")(health_app.routes[1].endpoint)
