@@ -50,13 +50,15 @@
         // BASE_PATH: the prefix this page is served under behind a reverse
         // proxy (e.g. /led), empty at the root. Every request below carries it.
         const BASE_PATH = '{{ base_path }}';
+        // DISPLAY_QUEUE: how many displays may wait for the panel (#142, #144).
+        const DISPLAY_QUEUE = Math.max(1, parseInt('{{ display_queue }}', 10) || 1);
         // The big-screen view (/wall). Follows the same events as the
         // simulator at /, but on a larger virtual matrix: text, cards and the
         // clock are laid out again for the grid, images and GIFs are prepared
         // at its size by the panel's own load_animation. It is not a mirror of
         // the 64x64 panel — that is what / is for — but it keeps the panel's
-        // order and timing: one display at a time, newest wins, the same
-        // durations, holds and idle screen (display/worker.py).
+        // order and timing: one display at a time, DISPLAY_QUEUE waiting, the
+        // same durations, holds and idle screen (display/worker.py).
         //
         // ?rows=144 (default) sets the height in LEDs, ?cols= the width
         // (default: the screen's aspect ratio), ?glow=0 turns the bloom off.
@@ -340,11 +342,11 @@
             }
         }
 
-        // ---- the worker: one display at a time, newest wins ----
+        // ---- the worker: one display at a time, DISPLAY_QUEUE waiting ----
         // The same rules as the simulator's and display/worker.py's.
         class Cancelled extends Error {}
         let current = null;   // {token, held, idle}
-        let pending = null;
+        let pending = [];     // waiting, oldest first
         let pumping = false;
         let idleScreen = null;
 
@@ -364,7 +366,7 @@
         function wait(token, seconds, hold) {
             if (!hold) return sleep(token, seconds * 1000);
             current.held = true;
-            if (pending) return Promise.reject(new Cancelled());
+            if (pending.length) return Promise.reject(new Cancelled());
             return new Promise((_, reject) => { token.wake = () => reject(new Cancelled()); });
         }
 
@@ -374,15 +376,26 @@
             return value;
         }
 
+        // DisplayWorker.submit: up to DISPLAY_QUEUE displays wait, in order,
+        // and past that the oldest waiting one goes — at 1, the newest wins. A
+        // waiting held display gives way to anything newer, so it is only ever
+        // last, as one on the panel would.
+        function enqueue(queue, ev, size) {
+            const last = queue[queue.length - 1];
+            if (last && last.hold && HOLDING_KINDS.includes(last.kind)) queue.pop();
+            queue.push(ev);
+            while (queue.length > size) queue.shift();
+        }
+
         function submit(ev) {
             if (ev.kind === 'clear') {
-                pending = null;
+                pending = [];
                 if (current) cancel(current.token);
                 clear();
                 if (!pumping) pump();
                 return;
             }
-            pending = ev;
+            enqueue(pending, ev, DISPLAY_QUEUE);
             if (current && (current.held || current.idle)) cancel(current.token);
             if (!pumping) pump();
         }
@@ -401,10 +414,9 @@
         async function pump() {
             pumping = true;
             for (;;) {
-                const ev = pending;
+                const ev = pending.shift();
                 const idle = !ev && idleScreen !== null;
                 if (!ev && !idle) break;
-                pending = null;
                 const token = { cancelled: false, wake: null };
                 current = { token: token, held: false, idle: idle };
                 try {
@@ -596,7 +608,7 @@
                 frame(x);
                 if (ev.hold) {
                     current.held = true;
-                    if (pending) throw new Cancelled();
+                    if (pending.length) throw new Cancelled();
                     await sleep(token, FRAME_MS);
                     continue;
                 }

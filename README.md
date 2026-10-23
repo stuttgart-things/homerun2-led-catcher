@@ -130,14 +130,14 @@ curl -X DELETE http://localhost:8080/display -H 'Authorization: Bearer dev'     
   [docs/testing-with-curl.md](docs/testing-with-curl.md)
 - Field reference, auth and limits: [docs/display-api.md](docs/display-api.md)
 
-The web simulator at the same address draws what the panel draws (same fonts, frames and
-timing), and has a **Panel control** form that uses the same API.
+The web simulator at the same address draws what the panel draws (same fonts, frames,
+timing and `DISPLAY_QUEUE`), and has a **Panel control** form that uses the same API.
 
 ### Big screen (`/wall`)
 
 For a TV or a projector, `/wall` (linked as **Big screen** in the simulator header) shows the
 same events on a much larger virtual LED matrix, fullscreen and without any chrome — double-click
-or press `f` for fullscreen. It follows the panel's order and timing (newest wins, durations,
+or press `f` for fullscreen. It follows the panel's order and timing (`DISPLAY_QUEUE`, durations,
 holds, idle clock) but is laid out for its own size rather than mirroring the 64x64 panel:
 
 - text is wrapped and set as large as it fits, scrolling text fills half the height
@@ -193,7 +193,7 @@ All configuration is via environment variables:
 | `LED_PWM_BITS` | *(library default)* | PWM bits, 1–11. Lower trades colour depth for refresh rate |
 | `LED_IDLE` | `off` | Idle screen: `clock` shows the time whenever nothing else is on the panel, `off` leaves it dark. Switchable at runtime with `PUT /display/idle` |
 | `LED_IDLE_COLOR` | `info` | Colour of the idle clock: a profile colour name or `r,g,b` |
-| `DISPLAY_QUEUE` | `1` | Displays that may wait while a finite one is on the panel. `1`: a single slot, the newest wins. More: kept in order, and when full the oldest waiting one is dropped. A held display never waits in front of anything. See [the display worker](docs/architecture.md#the-display-worker) |
+| `DISPLAY_QUEUE` | `1` | Displays that may wait while a finite one is on the panel. `1`: a single slot, the newest wins. More: kept in order, and when full the oldest waiting one is dropped. A held display never waits in front of anything. The simulator and `/wall` queue the same way, also in `web` mode. See [the display worker](docs/architecture.md#the-display-worker) |
 
 ## Runtime Stream Switching
 

@@ -95,8 +95,10 @@ with kind, system and title) and counted in `GET /display`'s `queue.dropped`. Th
 consumer and the API only append to the queue and return, so neither the stream nor
 `/healthz` waits for the panel (#54).
 
-The web simulator and `/wall` model the default single slot; with a longer queue the
-panel can show displays the simulator's canvas skipped (its event list has them all).
+The web simulator and `/wall` queue the same way, at the same `DISPLAY_QUEUE` (#144):
+the page is handed the configured length and its canvas applies these rules to the
+events it follows, so in `LED_MODE=web`, where there is no worker, the canvas still
+plays a burst the way the panel would. The event list shows every event either way.
 
 ## Operating modes
 

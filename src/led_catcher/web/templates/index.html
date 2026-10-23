@@ -567,6 +567,8 @@
         // BASE_PATH: the prefix this page is served under behind a reverse
         // proxy (e.g. /led), empty at the root. Every request below carries it.
         const BASE_PATH = '{{ base_path }}';
+        // DISPLAY_QUEUE: how many displays may wait for the panel (#142, #144).
+        const DISPLAY_QUEUE = Math.max(1, parseInt('{{ display_queue }}', 10) || 1);
         // LED matrix canvas simulation
         const canvas = document.getElementById('led-matrix');
         const ctx = canvas.getContext('2d');
@@ -947,10 +949,10 @@
             }
         }
 
-        // ---- the worker: one display at a time, newest wins ----
+        // ---- the worker: one display at a time, DISPLAY_QUEUE waiting ----
         class Cancelled extends Error {}
         let current = null;   // {token, held, idle}
-        let pending = null;
+        let pending = [];     // waiting, oldest first
         let pumping = false;
 
         function cancel(token) {
@@ -971,7 +973,7 @@
         function wait(token, seconds, hold) {
             if (!hold) return sleep(token, seconds * 1000);
             current.held = true;
-            if (pending) return Promise.reject(new Cancelled());
+            if (pending.length) return Promise.reject(new Cancelled());
             return new Promise((_, reject) => { token.wake = () => reject(new Cancelled()); });
         }
 
@@ -981,17 +983,28 @@
             return value;
         }
 
+        // DisplayWorker.submit: up to DISPLAY_QUEUE displays wait, in order,
+        // and past that the oldest waiting one goes — at 1, the newest wins. A
+        // waiting held display gives way to anything newer, so it is only ever
+        // last, as one on the panel would.
+        function enqueue(queue, ev, size) {
+            const last = queue[queue.length - 1];
+            if (last && last.hold && HOLDING_KINDS.includes(last.kind)) queue.pop();
+            queue.push(ev);
+            while (queue.length > size) queue.shift();
+        }
+
         function submit(ev) {
             if (ev.kind === 'clear') {
                 // DELETE /display: dark now, whatever is up — then the idle
                 // screen, if one is set.
-                pending = null;
+                pending = [];
                 if (current) cancel(current.token);
                 clearMatrix();
                 if (!pumping) pump();
                 return;
             }
-            pending = ev;
+            enqueue(pending, ev, DISPLAY_QUEUE);
             // DisplayWorker: a submission ends a held display and the idle screen.
             if (current && (current.held || current.idle)) cancel(current.token);
             if (!pumping) pump();
@@ -1011,13 +1024,12 @@
         async function pump() {
             pumping = true;
             for (;;) {
-                const ev = pending;
+                const ev = pending.shift();
                 // With nothing waiting, the idle screen runs (DisplayWorker._run).
                 // A held display never gets here: its wait only ends when it is
                 // replaced or blanked.
                 const idle = !ev && idleScreen !== null;
                 if (!ev && !idle) break;
-                pending = null;
                 const token = { cancelled: false, wake: null };
                 current = { token: token, held: false, idle: idle };
                 try {
@@ -1231,7 +1243,7 @@
                     // A held card keeps scrolling and gives way to the next
                     // display at once (DisplayWorker._wait with frame=True).
                     current.held = true;
-                    if (pending) throw new Cancelled();
+                    if (pending.length) throw new Cancelled();
                     await sleep(token, pause);
                     continue;
                 }

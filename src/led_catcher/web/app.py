@@ -42,6 +42,7 @@ def create_web_app(
     replay: Callable[[int], object] | None = None,
     replay_rate_limit: int = 30,
     base_path: str = "",
+    display_queue: int = 1,
 ) -> FastAPI:
     """Create the HTMX simulator FastAPI app.
 
@@ -65,7 +66,14 @@ def create_web_app(
     served under behind a reverse proxy. The routes here stay at the root —
     the caller mounts the app there — but every URL the page and its partials
     point at carries it, so a click under ``/led/`` does not land on ``/``.
+
+    ``display_queue`` (``DISPLAY_QUEUE``) is how many displays may wait for
+    the panel. The canvas of ``/`` and ``/wall`` queues with the worker's rules
+    at this length (#144), so it plays a burst the way the panel does — also in
+    ``web`` mode, where there is no worker and the canvas is the only picture.
     """
+    if display_queue < 1:
+        raise ValueError(f"display_queue must be at least 1, got {display_queue}")
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     presets = presets or []
 
@@ -94,6 +102,7 @@ def create_web_app(
             .replace("{{ date }}", date)
             .replace("{{ total_events }}", str(tracker.total))
             .replace("{{ mode }}", html.escape(mode))
+            .replace("{{ display_queue }}", str(display_queue))
             .replace("{{ control_panel }}", CONTROL_PANEL_HTML if display_api else "")
             .replace("{{ portal_theme }}", _portal_theme(request))
             # User-supplied text from here on (message titles, POST /display),
@@ -119,6 +128,7 @@ def create_web_app(
             .replace("{{ version }}", html.escape(version))
             .replace("{{ commit }}", html.escape(commit[:7] if len(commit) > 7 else commit))
             .replace("{{ mode }}", html.escape(mode))
+            .replace("{{ display_queue }}", str(display_queue))
         )
 
     @app.get("/events", response_class=HTMLResponse)
