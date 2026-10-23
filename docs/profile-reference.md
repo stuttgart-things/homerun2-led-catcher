@@ -246,11 +246,17 @@ displayRules:
 
 ### What happens to messages that arrive during a display
 
-The panel is a display, not a queue. One worker thread owns the matrix, with a
-single slot for what to show next, and the newest message wins: if three
-messages arrive while a finite display is running, the panel shows the third
-when it frees up and the first two are dropped. A stale value shown after a
-newer one has arrived is worse than not showing it.
+By default the panel is a display, not a queue. One worker thread owns the
+matrix, with a single slot for what to show next, and the newest message wins:
+if three messages arrive while a finite display is running, the panel shows the
+third when it frees up and the first two are dropped. A stale value shown after
+a newer one has arrived is worse than not showing it.
+
+`DISPLAY_QUEUE=N` lets up to N finite displays wait instead, shown in order;
+past N the oldest waiting one is dropped. A held display (`hold: true`) never
+waits in front of anything: one that is still waiting is superseded by any
+newer message, so a scoreboard only ever shows its newest score. See
+[the display worker](architecture.md#the-display-worker).
 
 Displaying happens on that worker, never on the consumer's event loop, so a
 message on the panel never stops the catcher reading its streams or answering

@@ -39,7 +39,7 @@ paths:
       summary: Put something on the panel
       description: |-
         Shown like a matched message: a held display gives way at once, a finite
-        one keeps its full duration, and the newest waiting display wins.
+        one keeps its full duration, and what arrives meanwhile waits in ``DISPLAY_QUEUE``.
       operationId: post_display_display_post
       requestBody:
         content:

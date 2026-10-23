@@ -96,7 +96,7 @@ def create_replayer(profile: Profile, tracker: EventTracker, worker=None) -> Rep
         event.replay_of = original.replay_of or original.id
         tracker.record(event)
         if worker is not None:
-            worker.submit(config)
+            worker.submit(config, system=msg.system, title=msg.title)
         logger.info("replaying event %d: system=%s severity=%s", event_id, msg.system, msg.severity)
         return event
 

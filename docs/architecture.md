@@ -60,18 +60,43 @@ in the simulator.
 
 Displaying is slow on purpose: a message stays on the panel for its `duration`, and a
 held one (`hold: true`) until something replaces it. That work runs on **one** thread
-that owns the panel, fed through a **single slot where the newest display wins**:
+that owns the panel, fed through a short queue of `DISPLAY_QUEUE` displays (#142). The
+default, `1`, is a **single slot where the newest display wins**:
 
 | On the panel | A new display arrives | Result |
 |---|---|---|
 | nothing | anything | shown at once |
 | held | anything | replaces it at once |
 | finite | anything | waits until the current one has had its full `duration` |
-| finite | several | only the newest is shown next |
+| finite | several, `DISPLAY_QUEUE=1` | only the newest is shown next |
+| finite | several, `DISPLAY_QUEUE=N` | up to N are shown in order; past N the **oldest** waiting one is dropped |
 
-`DELETE /display` is the exception: it blanks the panel immediately. The consumer and
-the API only write the slot and return, so neither the stream nor `/healthz` waits
-for the panel (#54).
+A larger queue is for bursts: Flux flips three `Ready=True` within seven seconds, and
+with a 10 s card the single slot shows the first and the last and drops the middle one.
+With `DISPLAY_QUEUE=3` all three reach the panel, one after another. Under pressure the
+newest still wins, because the oldest is what goes.
+
+Held displays (the table-tennis score) keep their meaning whatever the queue length:
+
+- a held display on the panel is replaced at once by the next display, as before;
+- a held display that is still **waiting** is superseded by anything submitted after
+  it. It would only be flashed for no time before what follows, and a stale score is
+  what the single slot was there to prevent — so a held display is only ever last in
+  the queue, and of several score updates in a burst only the newest is shown;
+- a held display is **not** moved ahead of finite ones already waiting. At the front,
+  the first of them would replace it at once and the scoreboard would end dark after
+  the burst; at the back it is what stays on the panel once the burst has played out.
+  The price is that a score can wait behind up to N finite displays.
+
+`DELETE /display` is the exception: it blanks the panel immediately and drops everything
+waiting, as does shutdown. Every display dropped before it reached the panel is logged
+at `info` (`display dropped before reaching the panel (superseded|queue full|blanked)`,
+with kind, system and title) and counted in `GET /display`'s `queue.dropped`. The
+consumer and the API only append to the queue and return, so neither the stream nor
+`/healthz` waits for the panel (#54).
+
+The web simulator and `/wall` model the default single slot; with a longer queue the
+panel can show displays the simulator's canvas skipped (its event list has them all).
 
 ## Operating modes
 

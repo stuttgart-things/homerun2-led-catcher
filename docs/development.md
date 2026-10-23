@@ -106,7 +106,7 @@ src/led_catcher/
 ├── profile/
 │   └── engine.py          # YAML rules, Jinja2, severity colours
 ├── display/
-│   ├── worker.py          # the thread that owns the panel, newest wins
+│   ├── worker.py          # the thread that owns the panel, DISPLAY_QUEUE handoff
 │   ├── modes.py           # static, text, ticker, image, gif, score, card; asset lookup
 │   ├── matrix.py          # rpi-rgb-led-matrix wrapper (no-op without it)
 │   ├── bdf.py             # BDF font metrics and glyph bitmaps

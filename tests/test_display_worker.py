@@ -478,3 +478,149 @@ def test_alive_follows_the_thread():
     assert w.alive is True
     w.stop(timeout=2)
     assert w.alive is False
+
+
+# ---- DISPLAY_QUEUE (#142) ---------------------------------------------------
+#
+# The order and dropping tests work on a worker that was never started, so what
+# is pending is exactly what was submitted: no thread, no timing. _take is what
+# the running worker calls to get its next display.
+
+
+def _drain(w: DisplayWorker) -> list:
+    taken = []
+    while (config := w._take()) is not None:
+        taken.append(getattr(config, "text", config))
+    return taken
+
+
+def test_the_default_queue_is_a_single_slot_where_the_newest_wins():
+    w = DisplayWorker(FakeDisplay())
+    assert w.queue_size == 1
+
+    for text in ("a", "b", "c"):
+        w.submit(static(text))
+
+    assert w.pending == 1
+    assert _drain(w) == ["c"]
+    assert w.superseded == 2
+
+
+def test_a_queue_keeps_finite_displays_in_order():
+    w = DisplayWorker(FakeDisplay(), queue=3)
+    for text in ("a", "b", "c"):
+        w.submit(static(text))
+
+    assert w.pending == 3
+    assert _drain(w) == ["a", "b", "c"]
+    assert w.superseded == 0
+
+
+def test_a_full_queue_drops_its_oldest_display(caplog):
+    caplog.set_level(logging.INFO, logger="led_catcher.display.worker")
+    w = DisplayWorker(FakeDisplay(), queue=3)
+    for i in range(1, 6):
+        w.submit(static(f"m{i}"), system="flux", title=f"title-{i}")
+
+    assert _drain(w) == ["m3", "m4", "m5"]
+    assert w.superseded == 2
+    assert "queue full" in caplog.text
+    assert "system=flux title=title-1" in caplog.text
+    assert "title-2" in caplog.text and "title-3" not in caplog.text
+
+
+def test_the_queue_must_hold_at_least_one():
+    with pytest.raises(ValueError):
+        DisplayWorker(FakeDisplay(), queue=0)
+
+
+def test_a_pending_held_display_is_superseded_by_anything_newer():
+    # On the panel a held display gives way at once; waiting, it would only be
+    # flashed for no time before what follows. Only the newest score counts.
+    w = DisplayWorker(FakeDisplay(), queue=3)
+    w.submit(static("card-1"))
+    w.submit(static("7:5", hold=True))
+    w.submit(static("8:5", hold=True))
+    w.submit(static("card-2"))
+    w.submit(static("9:5", hold=True))
+
+    assert _drain(w) == ["card-1", "card-2", "9:5"]
+    assert w.superseded == 2
+
+
+def test_a_held_display_is_replaced_immediately_with_a_queue():
+    display = FakeDisplay()
+    w = DisplayWorker(display, queue=3)
+    w.start()
+    try:
+        w.submit(static("7:5", duration=3600, hold=True))
+        assert wait_for(lambda: display.snapshot() == ["7:5"])
+
+        w.submit(static("card", duration=3600))
+        assert wait_for(lambda: display.snapshot() == ["7:5", "card"], timeout=1.0), (
+            "a held display did not give way to the next message"
+        )
+    finally:
+        w.stop(timeout=2)
+
+
+def test_a_burst_reaches_the_panel_in_order_and_the_score_stays_up_after_it():
+    display = FakeDisplay()
+    w = DisplayWorker(display, queue=3)
+    w.start()
+    try:
+        w.submit(static("on-screen", duration=TICK * 4))
+        assert wait_for(lambda: display.snapshot() == ["on-screen"])
+
+        w.submit(static("ready-1"))
+        w.submit(static("ready-2"))
+        w.submit(static("7:5", duration=3600, hold=True))
+
+        assert wait_for(lambda: display.snapshot() == ["on-screen", "ready-1", "ready-2", "7:5"])
+        assert wait_for(lambda: w.showing is not None and w.showing.held)
+        assert w.superseded == 0
+    finally:
+        w.stop(timeout=2)
+
+
+def test_blank_clears_the_queue():
+    w = DisplayWorker(FakeDisplay(), queue=3)
+    for text in ("a", "b", "c"):
+        w.submit(static(text))
+
+    w.blank()
+
+    assert w.pending == 0
+    assert w.superseded == 3
+    # Only the blank itself is left to run.
+    assert len(_drain(w)) == 1
+
+
+def test_blank_drops_what_waits_behind_a_finite_display():
+    display = FakeDisplay()
+    w = DisplayWorker(display, queue=3)
+    w.start()
+    try:
+        w.submit(static("long", duration=3600))
+        assert wait_for(lambda: display.snapshot() == ["long"])
+        w.submit(static("a"))
+        w.submit(static("b"))
+
+        w.blank()
+
+        assert wait_for(lambda: w.showing is None and w.pending == 0, timeout=1.0)
+        w.submit(static("after", duration=TICK))
+        assert wait_for(lambda: display.snapshot() == ["long", "after"])
+    finally:
+        w.stop(timeout=2)
+
+
+def test_stop_clears_the_queue():
+    w = DisplayWorker(FakeDisplay(), queue=3)
+    for text in ("a", "b"):
+        w.submit(static(text))
+
+    w.stop(timeout=2)
+
+    assert w.pending == 0
+    assert w._take() is None

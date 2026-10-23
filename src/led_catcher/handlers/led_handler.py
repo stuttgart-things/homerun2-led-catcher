@@ -11,7 +11,7 @@ from led_catcher.profile import Profile, match_rule
 logger = logging.getLogger(__name__)
 
 
-def create_led_handler(profile: Profile, panel=None):
+def create_led_handler(profile: Profile, panel=None, queue: int = 1):
     """Create a LED handler closure with the given profile.
 
     The handler hands the display to the worker thread and returns. It used to
@@ -22,8 +22,9 @@ def create_led_handler(profile: Profile, panel=None):
     already-validated `Config` rather than being read from the environment
     here, so a bad `LED_*` value is reported by the startup guard in
     `__main__` instead of surfacing as a traceback from the first handler.
+    `queue` is `DISPLAY_QUEUE`, from the same place.
     """
-    worker = get_worker(panel=panel)
+    worker = get_worker(panel=panel, queue=queue)
 
     def led_handler(msg: CaughtMessage) -> None:
         config = match_rule(profile, msg.message)
@@ -39,13 +40,15 @@ def create_led_handler(profile: Profile, panel=None):
             )
             return
 
+        # "queued", not "displaying": whether and when it reaches the panel is
+        # the worker's call, and it logs a display it drops (#142).
         logger.info(
-            "displaying: kind=%s system=%s severity=%s hold=%s",
+            "queued for display: kind=%s system=%s severity=%s hold=%s",
             config.kind,
             msg.message.system,
             msg.message.severity,
             config.hold,
         )
-        worker.submit(config)
+        worker.submit(config, system=msg.message.system, title=msg.message.title)
 
     return led_handler

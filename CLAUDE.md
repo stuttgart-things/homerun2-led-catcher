@@ -91,7 +91,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/handlers/control.py` — `GET`/`POST /streams` runtime stream switching
 - `src/led_catcher/handlers/display_api.py` — `GET`/`POST`/`DELETE /display`, `PUT /display/idle`: token auth, text cap, rate limit
 - `src/led_catcher/openapi.py` — generates `docs/openapi.yaml` (`task openapi`); the API entity in `catalog-info.yaml` points at it, and `tests/test_openapi.py` fails when it is stale
-- `src/led_catcher/display/worker.py` — display worker thread: newest wins, `blank()`, `showing`, the idle screen between displays
+- `src/led_catcher/display/worker.py` — display worker thread: `DISPLAY_QUEUE` handoff (default 1 = newest wins), `blank()`, `showing`, the idle screen between displays
 - `src/led_catcher/web/app.py` — simulator routes, `/ui/streams` control partial, SSE generator
 - `src/led_catcher/web/templates/index.html` — the simulator; its palette is built on the homerun2 `--hr-*` tokens (a `:where(:root)` copy), and behind the portal (`X-Forwarded-Prefix`) it links the portal's `/static/homerun2-tokens.css`
 - `src/led_catcher/web/fragments.py` — `/ui/manifest.json` and `/ui/fragment/events` for homerun2-portal: bare HTML styled by the portal's `hr-*` classes, every URL carries `BASE_PATH`
@@ -149,6 +149,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `LED_PWM_BITS` | *(library default)* | PWM bits, 1–11. Lower trades colour depth for refresh rate |
 | `LED_IDLE` | `off` | Idle screen: `clock` shows the time whenever nothing else is on the panel, `off` leaves it dark. Switchable at runtime with `PUT /display/idle` |
 | `LED_IDLE_COLOR` | `info` | Colour of the idle clock: a profile colour name or `r,g,b` |
+| `DISPLAY_QUEUE` | `1` | Displays that may wait for the panel: `1` = single slot, newest wins; more = FIFO, oldest dropped when full. A pending held display is superseded by anything newer |
 
 ## Testing
 

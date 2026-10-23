@@ -25,12 +25,15 @@ class FakeWorker:
         self.showing: Showing | None = None
         self.idle = None
         self.idle_active = False
+        self.queue_size = 1
+        self.pending = 0
+        self.superseded = 0
 
     def set_idle(self, idle) -> None:
         self.idle = idle
         self.idle_active = idle is not None
 
-    def submit(self, config) -> None:
+    def submit(self, config, system: str = "", title: str = "") -> None:
         self.submitted.append(config)
 
     def blank(self) -> None:
@@ -272,6 +275,15 @@ async def test_get_reports_what_is_showing():
     assert lit["display"]["text"] == "12:04"
     assert lit["display"]["color"] == [1, 2, 3]
     assert lit["since"].startswith("1970-01-01")
+
+
+async def test_get_reports_the_display_queue():
+    worker = FakeWorker()
+    worker.queue_size, worker.pending, worker.superseded = 3, 2, 5
+    async with client(make_app(worker)) as c:
+        body = (await c.get("/display")).json()
+
+    assert body["queue"] == {"size": 3, "pending": 2, "dropped": 5}
 
 
 async def test_options_list_the_shipped_assets():
