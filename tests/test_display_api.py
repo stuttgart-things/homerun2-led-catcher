@@ -25,9 +25,15 @@ class FakeWorker:
         self.showing: Showing | None = None
         self.idle = None
         self.idle_active = False
+        self.playlist = None
+        self.playlist_active = False
         self.queue_size = 1
         self.pending = 0
         self.superseded = 0
+
+    def set_playlist(self, playlist) -> None:
+        self.playlist = playlist
+        self.playlist_active = playlist is not None
 
     def set_idle(self, idle) -> None:
         self.idle = idle

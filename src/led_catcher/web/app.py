@@ -298,6 +298,8 @@ CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocompl
     <input type="text" id="pc-text" placeholder="HELLO PANEL">
     <label for="pc-image" id="pc-image-label" hidden>Image</label>
     <select id="pc-image" hidden></select>
+    <label for="pc-url" id="pc-url-label" hidden>or URL</label>
+    <input type="text" id="pc-url" placeholder="https://… (instead of the image above)" hidden>
     <label for="pc-font">Font</label>
     <select id="pc-font"></select>
     <label for="pc-color">Colour</label>
@@ -322,6 +324,29 @@ CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocompl
         <input type="color" id="pc-idle-color" value="#0064ff">
         <button type="button" class="secondary" id="pc-idle-set">Set</button>
     </div>
+    <h2 class="pc-section">Playlist</h2>
+    <label for="pc-pl-images">Images</label>
+    <select id="pc-pl-images" multiple size="6" title="Ctrl/Cmd-click for several"></select>
+    <label for="pc-pl-urls">URLs</label>
+    <textarea id="pc-pl-urls" rows="2" placeholder="https://… one per line, after the images"></textarea>
+    <label for="pc-pl-order">Order</label>
+    <div class="row-inline">
+        <select id="pc-pl-order">
+            <option value="sequence">in order</option>
+            <option value="random">random</option>
+        </select>
+        <label for="pc-pl-duration">Each</label>
+        <input type="number" id="pc-pl-duration" value="10" min="1" step="1" style="width:70px">
+        <span class="unit">s</span>
+    </div>
+    <label for="pc-pl-total">Total</label>
+    <div class="row-inline">
+        <input type="number" id="pc-pl-total" min="1" step="1" placeholder="endless" style="width:90px">
+        <span class="unit">min</span>
+        <button type="button" id="pc-pl-start">Start</button>
+        <button type="button" class="secondary" id="pc-pl-stop">Stop</button>
+    </div>
+    <div class="playlist-now" id="pc-pl-now"></div>
     <div class="status" id="pc-status"></div>
 </form>"""
 

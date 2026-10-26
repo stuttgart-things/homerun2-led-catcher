@@ -292,6 +292,7 @@
         .panel-control input[type=text],
         .panel-control input[type=password],
         .panel-control input[type=number],
+        .panel-control textarea,
         .panel-control select {
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.75rem;
@@ -362,6 +363,16 @@
 
         .panel-control .status.error { color: var(--severity-error); }
         .panel-control .status.ok { color: var(--severity-success); }
+
+        .panel-control textarea { resize: vertical; }
+        .panel-control .unit { font-size: 0.7rem; color: var(--text-secondary); }
+
+        .panel-control .playlist-now {
+            grid-column: 1 / -1;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            overflow-wrap: anywhere;
+        }
 
         .panel-control [hidden] { display: none; }
 
@@ -870,6 +881,8 @@
         const PERIOD_DOTS = [[2, -1]];
         // GET /display .idle while an idle screen is set, else null (#115).
         let idleScreen = null;
+        // GET /display .playlist while one runs, else null (#146).
+        let playlist = null;
 
         function rgbOf(hex) {
             return [1, 3, 5].map(i => parseInt((hex || '#ffffff').slice(i, i + 2), 16));
@@ -1010,6 +1023,47 @@
             if (!pumping) pump();
         }
 
+        // display/playlist.py: the schedule is the server's. Which image plays
+        // is read from GET /display at the start of each slot, so a shuffled
+        // playlist shows here what it shows on the panel.
+        function playlistKey(p) {
+            return p ? [p.started, p.order, p.duration, p.total, p.images.join('\n')].join('|') : null;
+        }
+
+        function setPlaylist(next) {
+            if (playlistKey(next) === playlistKey(playlist)) return;
+            playlist = next || null;
+            // Like the idle screen, which a playlist plays in place of.
+            if (current && current.idle) {
+                cancel(current.token);
+                if (!playlist && !idleScreen) clearMatrix();
+            }
+            if (!pumping) pump();
+        }
+
+        async function playPlaylist(token) {
+            for (;;) {
+                const panel = await guard(token, fetch(BASE_PATH + '/display').then(r => r.json()));
+                const p = panel.playlist;
+                showPlaylistControl(p);
+                if (!p || !p.current) {
+                    // Stopped or run out.
+                    playlist = null;
+                    clearMatrix();
+                    return;
+                }
+                // Replaced meanwhile: the panel plays the new one, and so does this.
+                playlist = p;
+                const left = p.current.end - p.now;
+                if (left < 0.05) {
+                    await sleep(token, Math.max(0, left) * 1000);
+                    continue;
+                }
+                await showGif({ kind: 'gif', image: p.current.image, text: '', font: '6x10.bdf',
+                                color: '#ffffff', duration: left, hold: false }, token);
+            }
+        }
+
         function setIdle(idle) {
             const next = idle && idle.mode !== 'off' ? idle : null;
             if (JSON.stringify(next) === JSON.stringify(idleScreen)) return;
@@ -1025,19 +1079,22 @@
             pumping = true;
             for (;;) {
                 const ev = pending.shift();
-                // With nothing waiting, the idle screen runs (DisplayWorker._run).
-                // A held display never gets here: its wait only ends when it is
-                // replaced or blanked.
-                const idle = !ev && idleScreen !== null;
-                if (!ev && !idle) break;
+                // With nothing waiting, the playlist runs, else the idle screen
+                // (DisplayWorker._run). A held display never gets here: its wait
+                // only ends when it is replaced or blanked.
+                const layer = ev ? null : playlist ? 'playlist' : idleScreen !== null ? 'idle' : null;
+                if (!ev && !layer) break;
                 const token = { cancelled: false, wake: null };
-                current = { token: token, held: false, idle: idle };
+                current = { token: token, held: false, idle: layer !== null };
                 try {
-                    await (idle ? idleClock(token) : play(ev, token));
+                    await (layer === 'playlist' ? playPlaylist(token) : layer ? idleClock(token) : play(ev, token));
                 } catch (e) {
                     // Cancelled: replaced (left lit) or blanked (already dark).
-                    if (!(e instanceof Cancelled)) console.error(idle ? 'idle screen failed' : 'display failed', ev, e);
-                    if (idle && !(e instanceof Cancelled)) { idleScreen = null; clearMatrix(); }
+                    if (!(e instanceof Cancelled)) console.error((layer || 'display') + ' failed', ev, e);
+                    if (layer && !(e instanceof Cancelled)) {
+                        if (layer === 'playlist') playlist = null; else idleScreen = null;
+                        clearMatrix();
+                    }
                 }
                 current = null;
             }
@@ -1281,6 +1338,17 @@
             }
             setIdle(panel.idle);
             showIdleControl(panel.idle);
+            setPlaylist(panel.playlist);
+            showPlaylistControl(panel.playlist);
+        }
+
+        function showPlaylistControl(p) {
+            const now = document.getElementById('pc-pl-now');
+            if (!now) return;
+            if (!p) { now.textContent = 'no playlist running'; return; }
+            const left = p.until === null ? 'endless' : Math.max(0, Math.round((p.until - p.now) / 60)) + ' min left';
+            now.textContent = 'playing ' + p.images.length + ' image(s), ' + (p.order === 'random' ? 'random' : 'in order') +
+                ', ' + p.duration + ' s each, ' + left + (p.current ? ' — now: ' + p.current.image : '');
         }
 
         // The Panel control's idle row follows the panel, whoever switched it.
@@ -1343,6 +1411,8 @@
                 $('pc-text-label').hidden = image;
                 $('pc-image').hidden = !image;
                 $('pc-image-label').hidden = !image;
+                $('pc-url').hidden = !image;
+                $('pc-url-label').hidden = !image;
             }
 
             // Retried rather than left empty: a page loaded while the service
@@ -1352,6 +1422,7 @@
                     fill($('pc-kind'), o.kinds, 'text');
                     fill($('pc-font'), o.fonts, '6x10.bdf');
                     fill($('pc-image'), o.images, o.images[0]);
+                    fill($('pc-pl-images'), o.images, null);
                     $('pc-text').maxLength = o.maxText;
                     $('pc-duration').max = o.maxDuration;
                     syncKind();
@@ -1403,7 +1474,7 @@
                     duration: Number($('pc-duration').value) || 5,
                     hold: $('pc-hold').checked
                 };
-                if (kind === 'image' || kind === 'gif') body.image = $('pc-image').value;
+                if (kind === 'image' || kind === 'gif') body.image = $('pc-url').value.trim() || $('pc-image').value;
                 else body.text = $('pc-text').value;
                 send('POST', body);
             });
@@ -1413,6 +1484,22 @@
                 const body = { mode: mode };
                 if (mode !== 'off') body.color = hexToRgb($('pc-idle-color').value);
                 send('PUT', body, BASE_PATH + '/display/idle', 'idle screen: ' + mode);
+            });
+            $('pc-pl-start').addEventListener('click', function () {
+                const images = Array.from($('pc-pl-images').selectedOptions).map(o => o.value)
+                    .concat($('pc-pl-urls').value.split('\n').map(u => u.trim()).filter(Boolean));
+                if (!images.length) { setStatus('pick at least one image or enter a URL', 'error'); return; }
+                const body = {
+                    images: images,
+                    order: $('pc-pl-order').value,
+                    duration: Number($('pc-pl-duration').value) || 10
+                };
+                const total = Number($('pc-pl-total').value);
+                if (total > 0) body.total = total * 60;
+                send('PUT', body, BASE_PATH + '/display/playlist', 'playlist started: ' + images.length + ' image(s)');
+            });
+            $('pc-pl-stop').addEventListener('click', function () {
+                send('DELETE', null, BASE_PATH + '/display/playlist', 'playlist stopped');
             });
         })();
     </script>

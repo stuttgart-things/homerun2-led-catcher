@@ -74,7 +74,7 @@ fields (`systems` and `severity` are rejected).
 |---|---|---|
 | `kind` | `text` | `static`, `text`, `ticker`, `image`, `gif`, `score` |
 | `text` | | Required for `static`, `text`, `ticker`, `score` |
-| `image` | | Required for `image` and `gif`. A file name in `visual_aid/`, not a path. An unknown name returns `404` |
+| `image` | | Required for `image` and `gif`. A file name in `visual_aid/` (not a path), or an `https://` URL ([images from URLs](#images-from-urls)). An unknown name returns `404` |
 | `font` | `6x10.bdf` | A BDF file name in `fonts/`, not a path |
 | `color` | `[255,255,255]` | An RGB triple, or a colour name from the profile (`error`, `warning`, `success`, `info`, `debug`, or your own) |
 | `duration` | `5` | Seconds, above 0 and at most 600 |
@@ -100,7 +100,71 @@ curl -sS -X POST localhost:8080/display \
 curl -sS -X POST localhost:8080/display \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"kind":"gif","image":"sunset.gif","duration":10}'
+
+# play a gif from the web
+curl -sS -X POST localhost:8080/display \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"kind":"gif","image":"https://example.com/cat.gif","duration":10}'
 ```
+
+## Images from URLs
+
+Wherever a request names an image — `POST /display` and `PUT /display/playlist`
+— an `https://` URL works as well as a file name. The catcher downloads it once,
+checks it with Pillow, and caches it as `url-<hash>.<ext>` in
+`LED_REMOTE_CACHE_DIR` (default `<tmp>/led-catcher-remote`). From there it is a
+local file: the display and `GET /display` name it by that cached name, the
+simulator canvas and `/wall` preview it like any other image, and a second
+request for the same URL does not download again.
+
+The download is bounded: https only, also when the server redirects; at most
+10 MB; 15 s timeout; at most 2048x2048 pixels a frame. The cache keeps the 64
+newest files. What goes wrong answers the request instead of reaching the panel:
+`400` for a URL that is not https or not an image, `502` when the server cannot
+be reached or answers with an error.
+
+The URL is fetched by the catcher, from the network it runs in: anyone with the
+token can make it request an https URL. Fetched images are not listed in
+`GET /display/options` — that list stays `visual_aid/`.
+
+## Playlist: several images, one after another
+
+`PUT /display/playlist` plays images or GIFs in turn, each for `duration`
+seconds, until stopped or for `total` seconds:
+
+| Field | Default | |
+|---|---|---|
+| `images` | | 1 to 50 file names in `visual_aid/` or `https://` URLs. URLs are fetched before the playlist starts |
+| `order` | `sequence` | `sequence`: as listed, round and round. `random`: shuffled anew each round, every image once a round, never one twice in a row |
+| `duration` | `10` | Seconds each image is shown, at most 600 |
+| `total` | *(none)* | Seconds the playlist runs, e.g. `600` for ten minutes, at most a day. Without it: until stopped |
+
+```bash
+# all moods, shuffled, 20 s each, for ten minutes
+curl -sS -X PUT localhost:8080/display/playlist \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"images":["stimmung_froehlich.gif","stimmung_traurig.gif","https://example.com/cat.gif"],
+       "order":"random","duration":20,"total":600}'
+
+# stop it
+curl -sS -X DELETE localhost:8080/display/playlist -H "Authorization: Bearer $TOKEN"
+```
+
+How it shares the panel:
+
+- It plays whenever nothing else is on the panel, in place of the
+  [idle screen](#idle-screen-the-clock). The clock comes back when it ends.
+- A display — from the API or a matched message — interrupts it at once and is
+  shown in full; then the playlist plays on.
+- The schedule runs on the clock: image *n* has the slot from `n × duration`
+  after the start, whether or not a message took part of it. After a message
+  the playlist resumes with what is left of the current slot, and `total`
+  ends it on time.
+- Starting a playlist ends a **held** display; a held display submitted while
+  the playlist runs stays up until something replaces it, as always.
+- A new `PUT` replaces the running playlist. `DELETE /display/playlist` and
+  `DELETE /display` stop it. It is not persisted: a restart has none.
+- An image that cannot be shown is skipped for its slot.
 
 ## `DELETE /display`
 
@@ -125,9 +189,27 @@ What is on the panel right now:
               "color": [0, 100, 255], "duration": 5.0, "hold": true},
   "queue": {"size": 1, "pending": 0, "dropped": 2},
   "idle": {"mode": "clock", "color": [0, 100, 255], "active": false, "utcOffset": 7200},
+  "playlist": null,
   "writable": true
 }
 ```
+
+While a playlist runs, `playlist` is:
+
+```json
+{
+  "images": ["stimmung_froehlich.gif", "url-45a5722505281b0dd6d7.gif"],
+  "order": "random", "duration": 20.0, "total": 600.0,
+  "started": 1793024554.1, "until": 1793025154.1, "now": 1793024580.3,
+  "current": {"position": 1, "image": "url-45a5722505281b0dd6d7.gif",
+              "start": 1793024574.1, "end": 1793024594.1},
+  "active": true
+}
+```
+
+Times are the panel's wall clock, `now` included, so a client with another
+clock can tell how much of the slot is left. `active` is false while a display
+has interrupted the playlist.
 
 `idle.active` is true while the idle screen is what the panel shows. `utcOffset`
 is the panel's, in seconds east of UTC. `queue` is there whenever a panel is
@@ -200,6 +282,13 @@ When the write API is enabled, the simulator page shows a **Panel control**
 form under the canvas. It is a plain client of the endpoints above. The token
 is typed in, kept in the tab's `sessionStorage`, and sent only as the
 `Authorization` header. It is never embedded in the page.
+
+For `image` and `gif`, the **or URL** field takes an `https://` URL instead of
+the file picked above it. The **Playlist** rows start a playlist from the files
+selected in the list (Ctrl/Cmd-click for several, played in list order) and the
+URLs typed below it, one per line; **Total** is in minutes, empty for endless.
+The line under it shows what the playlist plays now. The canvas and `/wall`
+play the playlist as the panel does.
 
 ## The simulator canvas draws what the panel draws
 

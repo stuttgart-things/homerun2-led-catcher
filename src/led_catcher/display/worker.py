@@ -36,6 +36,11 @@ it is what stays on the panel once the burst has played out.
 With an idle screen set (#115), the worker runs it whenever the slot is empty
 and no held display is up: after a finite display ends, after blank(), and at
 startup. A submission interrupts it at once.
+
+A playlist (#146, display.playlist) takes the idle screen's place while it
+runs: the same "nothing else to show" moments, the same interruption by any
+submission, and it plays again once the queue is empty. Starting one ends a
+held display, as a submission would. blank() stops it.
 """
 
 from __future__ import annotations
@@ -59,6 +64,10 @@ IDLE_SCREEN_POLL_SECONDS = 0.25
 # The modes that can hold the panel. The animated ones run for as long as their
 # animation takes, whatever `hold` says (docs/profile-reference.md).
 HOLDING_KINDS = frozenset({"static", "image", "score", "card"})
+
+# A playlist item shorter than this is not started: what is left of a slot
+# that a message took over, drawn for a frame and cleared again.
+MIN_PLAYLIST_ITEM_SECONDS = 0.05
 
 # Submitted by blank(): not a display, an instruction to leave the panel dark.
 _BLANK = object()
@@ -110,6 +119,9 @@ class DisplayWorker:
         # The idle screen (display.clock.IdleScreen), or None for a dark panel.
         self._idle = idle
         self._idle_active = False
+        # The playlist (display.playlist.Playlist), or None (#146).
+        self._playlist = None
+        self._playlist_active = False
         self._now = now
         self._lock = threading.Lock()
         self._queue_size = queue
@@ -164,6 +176,9 @@ class DisplayWorker:
         """
         with self._lock:
             self._clear_pending("blanked")
+            if self._playlist is not None:
+                logger.info("playlist stopped: panel blanked")
+                self._playlist = None
             self._pending.append(_Entry(_BLANK))
             self._cut.set()
             self._wake.set()
@@ -196,6 +211,36 @@ class DisplayWorker:
         IDLE_SCREEN_POLL_SECONDS."""
         with self._lock:
             self._idle = idle
+
+    @property
+    def playlist(self):
+        """The playlist, or None. Still reported once run out, until the
+        worker notices — readers check ``expired``."""
+        with self._lock:
+            return self._playlist
+
+    def set_playlist(self, playlist) -> None:
+        """Start, replace or (with None) stop the playlist. Never blocks.
+
+        A held display gives way to it, as it would to a submission; a finite
+        one keeps its time. A running idle screen or playlist ends at once.
+        """
+        with self._lock:
+            self._playlist = playlist
+            if playlist is not None and self._showing is not None and self._showing.held:
+                # _showing is cleared here, not by the mode: a held mode
+                # returns leaving it set, and the worker only plays a playlist
+                # on an empty panel.
+                self._showing = None
+            # Ends a held display's wait, the idle screen and a running
+            # playlist; _take spends it once the queue turns out empty.
+            self._wake.set()
+
+    @property
+    def playlist_active(self) -> bool:
+        """True while a playlist item is what the panel shows."""
+        with self._lock:
+            return self._playlist_active
 
     @property
     def idle_active(self) -> bool:
@@ -251,7 +296,12 @@ class DisplayWorker:
     def _take(self):
         """Take the next pending display, if any."""
         with self._lock:
-            if self._stopping.is_set() or not self._pending:
+            if self._stopping.is_set():
+                return None
+            if not self._pending:
+                # A wake with nothing to take — set_playlist() — is spent here, or the idle screen and the playlist,
+                # which both end on it, would end as soon as they start.
+                self._wake.clear()
                 return None
             config = self._pending.popleft().config
             if not self._pending:
@@ -268,7 +318,9 @@ class DisplayWorker:
             while not self._stopping.is_set():
                 config = self._take()
                 if config is None:
-                    if self.idle is not None and self.showing is None:
+                    if self.showing is None and self._playlist_due():
+                        self._run_playlist()
+                    elif self.idle is not None and self.showing is None:
                         self._run_idle_screen()
                     else:
                         self._wake.wait(timeout=IDLE_POLL_SECONDS)
@@ -319,7 +371,9 @@ class DisplayWorker:
         with self._lock:
             self._idle_active = True
         try:
-            while not self._stopping.is_set() and not self._wake.is_set() and self.idle is idle:
+            while (
+                not self._stopping.is_set() and not self._wake.is_set() and self.idle is idle and self.playlist is None
+            ):
                 now = self._now()
                 if int(now) != drawn_second:
                     try:
@@ -339,6 +393,80 @@ class DisplayWorker:
                 self._idle_active = False
         if self.idle is None and not self._stopping.is_set():
             # Switched off: dark, as without an idle screen.
+            self._blank()
+
+    def _playlist_due(self) -> bool:
+        """True when a playlist is set and has time left. One that ran out is
+        dropped here, so the idle screen takes over again."""
+        with self._lock:
+            playlist = self._playlist
+            if playlist is None:
+                return False
+            if playlist.expired(self._now()):
+                logger.info("playlist ended: total of %ss played out", playlist.total)
+                self._playlist = None
+                return False
+            return True
+
+    def _run_playlist(self) -> None:
+        """Play the playlist's items until something is submitted, it is
+        stopped, replaced or runs out, or the worker stops.
+
+        Each item gets what is left of its slot (display.playlist): after a
+        message took part of it, the rest; when a slot is over, the next.
+        """
+        from led_catcher.display.modes import display_event
+        from led_catcher.profile.engine import DisplayConfig
+
+        playlist = self.playlist
+
+        def wait(seconds: float, hold: bool = False, frame: bool = False) -> bool:
+            # The playlist's own wait: ends the item at once on a submission,
+            # blank(), shutdown, or another playlist. Never a held wait: the
+            # gif and image modes are only given finite configs here.
+            deadline = time.monotonic() + seconds
+            while True:
+                if self._stopping.is_set() or self._wake.is_set() or self.playlist is not playlist:
+                    raise _Interrupted
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._wake.wait(timeout=min(remaining, IDLE_SCREEN_POLL_SECONDS))
+
+        with self._lock:
+            self._playlist_active = True
+        try:
+            while not self._stopping.is_set() and not self._wake.is_set() and self.playlist is playlist:
+                now = self._now()
+                slot = playlist.slot(now)
+                if slot is None:
+                    with self._lock:
+                        if self._playlist is playlist:
+                            logger.info("playlist ended: total of %ss played out", playlist.total)
+                            self._playlist = None
+                    break
+                left = slot.end - now
+                try:
+                    if left < MIN_PLAYLIST_ITEM_SECONDS:
+                        wait(max(0.0, left))
+                        continue
+                    config = DisplayConfig(kind="gif", image=slot.image, duration=left)
+                    try:
+                        display_event(self._display, config, wait=wait)
+                    except _Interrupted:
+                        raise
+                    except Exception:
+                        logger.exception("playlist item failed: %s", slot.image)
+                        # Sat out rather than retried: the same slot would fail
+                        # again at once, as often as the loop can turn.
+                        wait(max(0.0, slot.end - self._now()))
+                except _Interrupted:
+                    break
+        finally:
+            with self._lock:
+                self._playlist_active = False
+        if self.playlist is None and self.idle is None and not self._stopping.is_set():
+            # Stopped or run out, and no idle screen to take over: dark.
             self._blank()
 
     def _set_showing(self, showing: Showing | None) -> None:

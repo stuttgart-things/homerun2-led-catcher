@@ -252,6 +252,7 @@ needs:
 |----------|---------|-------------|
 | `FONTS_DIR` | `<repo>/fonts` | directory searched for BDF fonts |
 | `VISUAL_AID_DIR` | `<repo>/visual_aid` | directory searched for images and GIFs |
+| `LED_REMOTE_CACHE_DIR` | `<tmp>/led-catcher-remote` | Where images fetched from `https://` URLs are cached (newest 64 kept) |
 | `LED_DEFAULT_FONT` | `6x10.bdf` | font used when a rule names a missing font |
 
 Lookup order is `$FONTS_DIR` → repo root → package dir → `/app/fonts` → the name as

@@ -89,7 +89,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/handlers/led_handler.py` — LED matrix display handler
 - `src/led_catcher/handlers/health.py` — FastAPI health endpoint
 - `src/led_catcher/handlers/control.py` — `GET`/`POST /streams` runtime stream switching
-- `src/led_catcher/handlers/display_api.py` — `GET`/`POST`/`DELETE /display`, `PUT /display/idle`: token auth, text cap, rate limit
+- `src/led_catcher/handlers/display_api.py` — `GET`/`POST`/`DELETE /display`, `PUT /display/idle`, `PUT`/`DELETE /display/playlist`: token auth, text cap, rate limit
 - `src/led_catcher/openapi.py` — generates `docs/openapi.yaml` (`task openapi`); the API entity in `catalog-info.yaml` points at it, and `tests/test_openapi.py` fails when it is stale
 - `src/led_catcher/display/worker.py` — display worker thread: `DISPLAY_QUEUE` handoff (default 1 = newest wins), `blank()`, `showing`, the idle screen between displays
 - `src/led_catcher/web/app.py` — simulator routes, `/ui/streams` control partial, SSE generator
@@ -104,6 +104,8 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/display/modes.py` — display mode implementations, asset lookup
 - `src/led_catcher/display/card.py` — the `card` mode: a whole event on 64x64; its layout is also sent to the simulator as data
 - `src/led_catcher/display/offscreen.py` — a matrix that draws into a PIL image; `hack/render_card.py` renders a card to PNG
+- `src/led_catcher/display/playlist.py` — playlists (`PUT /display/playlist`): a wall-clock schedule of slots, shuffled per round with a shared seed; the worker plays it in place of the idle screen, the canvas and `/wall` read the current slot from `GET /display`
+- `src/led_catcher/display/remote.py` — images from `https://` URLs: bounded download, Pillow check, cached under a bare `url-<hash>` name that `_resolve_image` finds after `visual_aid/`
 - `src/led_catcher/display/clock.py` — the idle screen: clock texts, layout, drawing; the canvas mirrors it
 - `src/led_catcher/tools/publish.py` — `led-catcher-publish` test message producer
 - `dagger/main.go` — Dagger CI module (delegates to stuttgart-things/dagger/python)
@@ -139,6 +141,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `DATE` | `unknown` | Build date (injected at build time) |
 | `FONTS_DIR` | `<repo>/fonts` | Directory searched for BDF fonts |
 | `VISUAL_AID_DIR` | `<repo>/visual_aid` | Directory searched for images/GIFs |
+| `LED_REMOTE_CACHE_DIR` | `<tmp>/led-catcher-remote` | Where images fetched from `https://` URLs are cached (newest 64 kept) |
 | `LED_DEFAULT_FONT` | `6x10.bdf` | Fallback font when a rule names a missing one |
 | `LED_HARDWARE_MAPPING` | `adafruit-hat` | Panel wiring: `adafruit-hat`, `adafruit-hat-pwm` (PWM mod soldered), `regular`, … |
 | `LED_GPIO_SLOWDOWN` | *(library default)* | GPIO slowdown. Raise it if the panel ghosts or glitches. On a Pi 3B+ every value from `0` to `4` is clean; `2` is a safe choice there, not a requirement |

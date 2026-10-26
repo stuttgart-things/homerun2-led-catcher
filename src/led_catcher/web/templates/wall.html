@@ -349,6 +349,7 @@
         let pending = [];     // waiting, oldest first
         let pumping = false;
         let idleScreen = null;
+        let playlist = null;   // GET /display .playlist (#146)
 
         function cancel(token) {
             token.cancelled = true;
@@ -400,6 +401,42 @@
             if (!pumping) pump();
         }
 
+        // display/playlist.py, as in the simulator: which image plays is read
+        // from GET /display at the start of each slot.
+        function playlistKey(p) {
+            return p ? [p.started, p.order, p.duration, p.total, p.images.join('\n')].join('|') : null;
+        }
+
+        function setPlaylist(next) {
+            if (playlistKey(next) === playlistKey(playlist)) return;
+            playlist = next || null;
+            if (current && current.idle) {
+                cancel(current.token);
+                if (!playlist && !idleScreen) clear();
+            }
+            if (!pumping) pump();
+        }
+
+        async function playPlaylist(token) {
+            for (;;) {
+                const panel = await guard(token, fetch(BASE_PATH + '/display').then(r => r.json()));
+                const p = panel.playlist;
+                if (!p || !p.current) {
+                    playlist = null;
+                    clear();
+                    return;
+                }
+                playlist = p;
+                const left = p.current.end - p.now;
+                if (left < 0.05) {
+                    await sleep(token, Math.max(0, left) * 1000);
+                    continue;
+                }
+                await showGif({ kind: 'gif', image: p.current.image, text: '', font: '6x10.bdf',
+                                color: '#ffffff', duration: left, hold: false }, token);
+            }
+        }
+
         function setIdle(idle) {
             const next = idle && idle.mode !== 'off' ? idle : null;
             if (JSON.stringify(next) === JSON.stringify(idleScreen)) return;
@@ -415,15 +452,19 @@
             pumping = true;
             for (;;) {
                 const ev = pending.shift();
-                const idle = !ev && idleScreen !== null;
-                if (!ev && !idle) break;
+                // Nothing waiting: the playlist, else the idle screen.
+                const layer = ev ? null : playlist ? 'playlist' : idleScreen !== null ? 'idle' : null;
+                if (!ev && !layer) break;
                 const token = { cancelled: false, wake: null };
-                current = { token: token, held: false, idle: idle };
+                current = { token: token, held: false, idle: layer !== null };
                 try {
-                    await (idle ? idleClock(token) : play(ev, token));
+                    await (layer === 'playlist' ? playPlaylist(token) : layer ? idleClock(token) : play(ev, token));
                 } catch (e) {
-                    if (!(e instanceof Cancelled)) console.error(idle ? 'idle screen failed' : 'display failed', ev, e);
-                    if (idle && !(e instanceof Cancelled)) { idleScreen = null; clear(); }
+                    if (!(e instanceof Cancelled)) console.error((layer || 'display') + ' failed', ev, e);
+                    if (layer && !(e instanceof Cancelled)) {
+                        if (layer === 'playlist') playlist = null; else idleScreen = null;
+                        clear();
+                    }
                 }
                 current = null;
             }
@@ -681,6 +722,7 @@
                 if (last && last.kind !== 'clear' && (held || Date.now() / 1000 - last.at < last.duration)) submit(last);
             }
             setIdle(panel.idle);
+            setPlaylist(panel.playlist);
         }
 
         function resync(initial) {

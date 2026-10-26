@@ -4,6 +4,9 @@
 worker, exactly as a matched message would be handed over. `GET /display`
 says what is on the panel, `DELETE /display` blanks it — back to the idle
 screen when one is set. `PUT /display/idle` switches that idle screen (#115).
+`PUT /display/playlist` plays several images one after another, `DELETE
+/display/playlist` stops them (#146). Wherever an image is named, an
+``https://`` URL works too: it is fetched once and cached (display.remote).
 
 The writing endpoints need `LED_API_TOKEN` as a bearer token. Without one they
 are not registered at all: this is an API that writes to a physical display in
@@ -18,6 +21,7 @@ the panel sees.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 import threading
@@ -33,6 +37,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from led_catcher.config.settings import ApiConfig
 from led_catcher.display.clock import IDLE_MODES, IdleScreen
 from led_catcher.display.modes import _resolve_image, fonts_dirs, is_bare_name, visual_aid_dirs
+from led_catcher.display.playlist import MAX_PLAYLIST_ITEMS, ORDERS, Playlist
+from led_catcher.display.remote import RemoteImageError, check_url, fetch_image, is_remote
 from led_catcher.profile.engine import DEFAULT_COLORS, DisplayConfig
 
 if TYPE_CHECKING:
@@ -48,6 +54,9 @@ IMAGE_KINDS = {"image", "gif"}
 # Longest a finite display may ask for. Anything meant to stay up longer is
 # what `hold` is for, and a held display gives way to the next one.
 MAX_DURATION_SECONDS = 600.0
+
+# Longest a playlist with a `total` may run. Without one it runs until stopped.
+MAX_PLAYLIST_TOTAL_SECONDS = 24 * 3600.0
 
 IMAGE_SUFFIXES = {".png", ".gif", ".jpg", ".jpeg", ".bmp", ".webp"}
 
@@ -81,8 +90,8 @@ class DisplayRequest(BaseModel):
     )
     image: str = Field(
         default="",
-        description="Required for image and gif: a file name in visual_aid/, not a path.",
-        examples=["sunset.gif"],
+        description="Required for image and gif: a file name in visual_aid/ (not a path), or an https:// URL.",
+        examples=["sunset.gif", "https://example.com/cat.gif"],
     )
     font: str = Field(default="6x10.bdf", description="A BDF file name in fonts/, not a path.")
     # An RGB triple, or the name of a profile colour ("error", "warning", …).
@@ -104,12 +113,59 @@ class DisplayRequest(BaseModel):
             raise ValueError("RGB components must be between 0 and 255")
         return value
 
-    @field_validator("font", "image")
+    @field_validator("font")
     @classmethod
     def _bare_name(cls, value: str) -> str:
         if value and not is_bare_name(value):
             raise ValueError("must be a file name, not a path")
         return value
+
+    @field_validator("image")
+    @classmethod
+    def _image_name(cls, value: str) -> str:
+        return check_image_name(value) if value else value
+
+
+def check_image_name(value: str) -> str:
+    """A bare file name, or an https URL. ValueError for anything else."""
+    if is_remote(value):
+        try:
+            return check_url(value)
+        except RemoteImageError as exc:
+            raise ValueError(str(exc)) from exc
+    if not is_bare_name(value):
+        raise ValueError("must be a file name (not a path) or an https:// URL")
+    return value
+
+
+class PlaylistRequest(BaseModel):
+    """Body of ``PUT /display/playlist``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    images: list[str] = Field(
+        min_length=1,
+        max_length=MAX_PLAYLIST_ITEMS,
+        description="File names in visual_aid/ or https:// URLs, played in this order unless order is random.",
+        examples=[["sunset.gif", "https://example.com/cat.gif"]],
+    )
+    order: Literal["sequence", "random"] = Field(
+        default="sequence",
+        description="sequence: as listed, round and round. "
+        "random: shuffled each round, never one image twice in a row.",
+    )
+    duration: float = Field(default=10.0, gt=0, le=MAX_DURATION_SECONDS, description="Seconds each image is shown.")
+    total: float | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_PLAYLIST_TOTAL_SECONDS,
+        description="Seconds the playlist runs, e.g. 600 for ten minutes. Omitted: until stopped.",
+    )
+
+    @field_validator("images")
+    @classmethod
+    def _image_names(cls, value: list[str]) -> list[str]:
+        return [check_image_name(name) for name in value]
 
 
 class IdleRequest(BaseModel):
@@ -200,6 +256,7 @@ def create_display_router(
     clock: Callable[[], float] = time.monotonic,
     idle: IdleScreen | None = None,
     idle_color: tuple[int, int, int] = DEFAULT_COLORS["info"],
+    now: Callable[[], float] = time.time,
 ) -> APIRouter:
     """Build the ``/display`` router.
 
@@ -207,18 +264,29 @@ def create_display_router(
     then reach only the simulator. ``colors`` are the profile's named colours,
     which a request can use instead of an RGB triple. ``idle`` is the idle
     screen the process started with; ``idle_color`` the colour a clock
-    switched on without one gets.
+    switched on without one gets. ``now`` is the wall clock a playlist's
+    schedule runs on.
     """
     router = APIRouter()
     palette = dict(DEFAULT_COLORS)
     palette.update(colors or {})
     # Kept here too, not only in the worker: in web mode there is no worker,
     # and the simulator still shows the idle screen.
-    state = {"idle": idle, "color": idle.color if idle is not None else idle_color}
+    state = {"idle": idle, "color": idle.color if idle is not None else idle_color, "playlist": None}
 
     def idle_body() -> dict:
         active = worker.idle_active if worker is not None else state["idle"] is not None
         return describe_idle(state["idle"], active, state["color"])
+
+    def playlist_body() -> dict | None:
+        # The worker's, when there is one: it drops a playlist that blank()
+        # stopped or that ran out.
+        playlist = worker.playlist if worker is not None else state["playlist"]
+        if playlist is None or playlist.expired(now()):
+            return None
+        body = playlist.describe(now())
+        body["active"] = worker.playlist_active if worker is not None else True
+        return body
 
     @router.get("/display", summary="What is on the panel right now", tags=["display"])
     async def get_display() -> dict:
@@ -229,6 +297,7 @@ def create_display_router(
             # reached the panel since startup (#142).
             body["queue"] = {"size": worker.queue_size, "pending": worker.pending, "dropped": worker.superseded}
         body["idle"] = idle_body()
+        body["playlist"] = playlist_body()
         body["writable"] = api.writable
         return body
 
@@ -243,6 +312,8 @@ def create_display_router(
             "maxText": api.max_text,
             "maxDuration": MAX_DURATION_SECONDS,
             "idleModes": list(IDLE_MODES),
+            "playlistOrders": list(ORDERS),
+            "maxPlaylistItems": MAX_PLAYLIST_ITEMS,
             "writable": api.writable,
         }
 
@@ -272,13 +343,20 @@ def create_display_router(
         tags=["display"],
         responses={
             **WRITE_RESPONSES,
-            400: {"description": "The kind is missing what it draws, text too long, or an unknown colour name"},
+            400: {
+                "description": "The kind is missing what it draws, text too long, an unknown colour name, "
+                "or a URL that is not an image the panel can show"
+            },
             404: {"description": "The image is not in visual_aid/"},
+            502: {"description": "The image URL could not be fetched"},
         },
     )
     async def post_display(body: DisplayRequest) -> dict:
         """Shown like a matched message: a held display gives way at once, a finite
-        one keeps its full duration, and what arrives meanwhile waits in ``DISPLAY_QUEUE``."""
+        one keeps its full duration, and what arrives meanwhile waits in ``DISPLAY_QUEUE``.
+        An https ``image`` is fetched first; the display then names it by its cached file."""
+        if body.image and is_remote(body.image):
+            body = body.model_copy(update={"image": await localize(body.image)})
         config = _to_config(body, palette, api.max_text)
         logger.info(
             "displaying from API: kind=%s hold=%s",
@@ -314,6 +392,67 @@ def create_display_router(
             tracker.touch()
         return {"accepted": True, "panel": worker is not None, "idle": idle_body()}
 
+    @router.put(
+        "/display/playlist",
+        dependencies=[Depends(authorize)],
+        summary="Play several images one after another",
+        tags=["display"],
+        responses={
+            **WRITE_RESPONSES,
+            400: {"description": "A URL that is not an image the panel can show"},
+            404: {"description": "An image is not in visual_aid/"},
+            502: {"description": "An image URL could not be fetched"},
+        },
+    )
+    async def put_playlist(body: PlaylistRequest) -> dict:
+        """Each image is shown for ``duration`` seconds, as listed or shuffled,
+        until stopped or for ``total`` seconds. It plays whenever nothing else
+        is on the panel: a message interrupts it, and it picks up again once
+        the message is done. It ends a held display and replaces a running
+        playlist; the idle screen comes back when it ends. URLs are fetched
+        before it starts. Not persisted."""
+        images = []
+        for name in body.images:
+            if is_remote(name):
+                name = await localize(name)
+            elif _resolve_image(name) is None:
+                raise HTTPException(status_code=404, detail=f"image '{name}' not found")
+            images.append(name)
+        playlist = Playlist(
+            images=tuple(images), duration=body.duration, order=body.order, total=body.total, started=now()
+        )
+        state["playlist"] = playlist
+        logger.info(
+            "playlist from API: %d image(s), %s, %ss each, total %s",
+            len(images),
+            body.order,
+            body.duration,
+            body.total if body.total is not None else "endless",
+            extra={"system": API_SYSTEM},
+        )
+        if worker is not None:
+            worker.set_playlist(playlist)
+        if tracker is not None:
+            tracker.touch()
+        return {"accepted": True, "panel": worker is not None, "playlist": playlist_body()}
+
+    @router.delete(
+        "/display/playlist",
+        dependencies=[Depends(authorize)],
+        summary="Stop the playlist",
+        tags=["display"],
+        responses=WRITE_RESPONSES,
+    )
+    async def delete_playlist() -> dict:
+        """The idle screen, or a dark panel, takes its place."""
+        logger.info("playlist stopped from API", extra={"system": API_SYSTEM})
+        state["playlist"] = None
+        if worker is not None:
+            worker.set_playlist(None)
+        if tracker is not None:
+            tracker.touch()
+        return {"accepted": True, "panel": worker is not None}
+
     @router.delete(
         "/display",
         dependencies=[Depends(authorize)],
@@ -322,9 +461,10 @@ def create_display_router(
         responses=WRITE_RESPONSES,
     )
     async def delete_display() -> dict:
-        """Ends what is on the panel. With an idle screen set, that is what
-        comes back; without one, the panel goes dark."""
+        """Ends what is on the panel, a playlist included. With an idle screen
+        set, that is what comes back; without one, the panel goes dark."""
         logger.info("blanking the panel from API", extra={"system": API_SYSTEM})
+        state["playlist"] = None
         if worker is not None:
             worker.blank()
         if tracker is not None:
@@ -332,6 +472,15 @@ def create_display_router(
         return {"accepted": True, "panel": worker is not None}
 
     return router
+
+
+async def localize(url: str) -> str:
+    """Fetch ``url`` into the image cache, off the event loop. The cached file
+    name, or the HTTPException the API answers with."""
+    try:
+        return await asyncio.to_thread(fetch_image, url)
+    except RemoteImageError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
 
 
 def describe_config(config: DisplayConfig) -> dict:
