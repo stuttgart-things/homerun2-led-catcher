@@ -316,10 +316,16 @@ def _resolve_font(font_name: str) -> str:
 
 
 def _resolve_image(image_name: str) -> Path | None:
-    """Resolve an image name to a full path."""
+    """Resolve an image name to a full path.
+
+    Images fetched from a URL (display.remote) are found after visual_aid/,
+    under the bare name they were cached as.
+    """
+    from led_catcher.display.remote import remote_dir
+
     if not image_name:
         return None
-    return _search(visual_aid_dirs(), image_name)
+    return _search([*visual_aid_dirs(), remote_dir()], image_name)
 
 
 def _score_board(matrix, config, wait=_sleep) -> None:

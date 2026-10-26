@@ -124,7 +124,21 @@ curl -X POST http://localhost:8080/display -H 'Authorization: Bearer dev' \
 
 curl http://localhost:8080/display                                                # what is showing
 curl -X DELETE http://localhost:8080/display -H 'Authorization: Bearer dev'      # blank it now
+
+# a GIF straight from an https URL (fetched once, then cached)
+curl -X POST http://localhost:8080/display -H 'Authorization: Bearer dev' \
+  -H 'Content-Type: application/json' \
+  -d '{"kind":"gif","image":"https://example.com/cat.gif","duration":10}'
+
+# a playlist: shuffled, 20 s each, for ten minutes (omit total: until stopped)
+curl -X PUT http://localhost:8080/display/playlist -H 'Authorization: Bearer dev' \
+  -H 'Content-Type: application/json' \
+  -d '{"images":["sunset.gif","https://example.com/cat.gif"],"order":"random","duration":20,"total":600}'
+curl -X DELETE http://localhost:8080/display/playlist -H 'Authorization: Bearer dev'
 ```
+
+A playlist plays whenever nothing else is on the panel, in place of the idle clock:
+messages interrupt it and it plays on afterwards ([details](docs/display-api.md#playlist-several-images-one-after-another)).
 
 - Commands for every mode, a walkthrough script and the error responses:
   [docs/testing-with-curl.md](docs/testing-with-curl.md)
@@ -138,7 +152,7 @@ timing and `DISPLAY_QUEUE`), and has a **Panel control** form that uses the same
 For a TV or a projector, `/wall` (linked as **Big screen** in the simulator header) shows the
 same events on a much larger virtual LED matrix, fullscreen and without any chrome — double-click
 or press `f` for fullscreen. It follows the panel's order and timing (`DISPLAY_QUEUE`, durations,
-holds, idle clock) but is laid out for its own size rather than mirroring the 64x64 panel:
+holds, idle clock, playlist) but is laid out for its own size rather than mirroring the 64x64 panel:
 
 - text is wrapped and set as large as it fits, scrolling text fills half the height
 - cards get a full-width header, the whole title and the message as a ticker
@@ -183,6 +197,7 @@ All configuration is via environment variables:
 | `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warning`, `error` |
 | `FONTS_DIR` | `<repo>/fonts` | Directory searched for BDF fonts |
 | `VISUAL_AID_DIR` | `<repo>/visual_aid` | Directory searched for images and GIFs |
+| `LED_REMOTE_CACHE_DIR` | `<tmp>/led-catcher-remote` | Where images fetched from `https://` URLs are cached (newest 64 kept) |
 | `LED_DEFAULT_FONT` | `6x10.bdf` | Fallback font when a rule names a missing one |
 | `LED_HARDWARE_MAPPING` | `adafruit-hat` | Panel wiring: `adafruit-hat`, `adafruit-hat-pwm` (PWM mod soldered), `regular`, … |
 | `LED_GPIO_SLOWDOWN` | *(library default)* | GPIO slowdown. Raise it if the panel ghosts or glitches. On a Pi 3B+ every value from `0` to `4` is clean; `2` is a safe choice there, not a requirement |
