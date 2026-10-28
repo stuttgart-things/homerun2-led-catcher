@@ -624,3 +624,67 @@ def test_stop_clears_the_queue():
 
     assert w.pending == 0
     assert w._take() is None
+
+
+# --- overlay (#148) ---------------------------------------------------------
+#
+# An overlay plays over what the message would otherwise show: the winner's
+# figure, then the held score. The score must follow on a free panel, and must
+# not come after something newer.
+
+
+def overlay(text: str, then: DisplayConfig, duration: float = TICK) -> DisplayConfig:
+    return DisplayConfig(kind="static", text=text, duration=duration, overlay=True, then=then)
+
+
+def test_an_overlay_gives_way_to_what_it_played_over(worker):
+    w, display = worker
+    w.submit(overlay("figure", then=static("SIEG", duration=3600, hold=True)))
+
+    assert wait_for(lambda: display.snapshot() == ["figure", "SIEG"])
+    assert wait_for(lambda: w.showing is not None and w.showing.config.text == "SIEG")
+    assert w.showing.held, "what the overlay played over is the held score, not a five-second flash"
+
+
+def test_a_newer_message_goes_before_what_an_overlay_played_over(worker):
+    w, display = worker
+    w.submit(overlay("figure", then=static("old board", hold=True), duration=TICK * 4))
+    assert wait_for(lambda: display.snapshot() == ["figure"])
+
+    w.submit(static("next point", hold=True))
+
+    assert wait_for(lambda: display.snapshot() == ["figure", "next point"])
+    time.sleep(TICK * 2)
+    assert "old board" not in display.snapshot()
+
+
+def test_blank_cuts_an_overlay_and_what_follows_it(worker):
+    w, display = worker
+    w.submit(overlay("figure", then=static("board", hold=True), duration=3600))
+    assert wait_for(lambda: display.snapshot() == ["figure"])
+
+    w.blank()
+    time.sleep(TICK * 2)
+    assert display.snapshot() == ["figure"]
+
+
+def test_a_picture_that_cannot_be_fetched_still_gives_way(worker, monkeypatch):
+    """The URL a message named is not there: the score still shows."""
+    from led_catcher.display import remote
+
+    def refuse(url, opener=None):
+        raise remote.RemoteImageError("gone", 502)
+
+    monkeypatch.setattr(remote, "fetch_image", refuse)
+    w, display = worker
+    w.submit(
+        DisplayConfig(
+            kind="gif",
+            image="https://example.org/figure.gif",
+            duration=3600,
+            overlay=True,
+            then=static("board", hold=True),
+        )
+    )
+
+    assert wait_for(lambda: display.snapshot() == ["board"])

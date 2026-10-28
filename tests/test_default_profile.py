@@ -197,3 +197,34 @@ def test_a_tabletennis_error_still_falls_through_to_error_all(tmp_path):
     assert config is not None
     assert config.kind == "text"
     assert config.hold is False
+
+
+# --- the winner's figure (#148) ---------------------------------------------
+
+FIGURE = "https://schmetterpause.example/avatars/7f1c2a90.gif"
+
+
+@pytest.mark.parametrize(("transition", "banner"), [("set_won", "SATZ Bernd"), ("match_won", "SIEG Bernd")])
+def test_a_won_set_shows_the_winners_figure_then_the_board(tmp_path, transition, banner):
+    profile = _shipped_profile(tmp_path)
+    tags = (
+        f"match=m1,set=2,transition={transition},side=b,points=0:0,sets=0:1,"
+        f"player_a=Anna,player_b=Bernd,banner={banner},figure={FIGURE}"
+    )
+    config = match_rule(profile, Message(title="SET 0:1", severity="success", system="tabletennis", tags=tags))
+
+    assert config is not None
+    assert config.kind == "gif"
+    assert config.image == FIGURE
+    assert config.then is not None, "after the figure, the board, not the clock"
+    assert config.then.kind == "score" and config.then.hold
+    assert config.then.text.endswith(f";banner={banner.upper()}")
+
+
+def test_a_point_carries_no_figure_and_goes_straight_to_the_board(tmp_path):
+    profile = _shipped_profile(tmp_path)
+    config = match_rule(profile, Message(title="5:10", severity="info", system="tabletennis", tags=ZAEHLWERK_TAGS))
+
+    assert config is not None
+    assert config.kind == "score"
+    assert config.then is None

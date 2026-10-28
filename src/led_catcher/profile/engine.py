@@ -57,6 +57,13 @@ class DisplayConfig:
     strip_prefix: bool = False
     # card only: what the card shows, filled in when a message is matched.
     card: CardContent | None = None
+    # overlay plays this display over what the message would otherwise show:
+    # once it has run its duration, the same message goes on the panel as the
+    # next matching rule draws it (`then`, filled in when it is matched). For
+    # a moment between points -- the winner's figure after a won set -- that
+    # leaves the score on the panel rather than the clock (#148).
+    overlay: bool = False
+    then: DisplayConfig | None = None
     color: tuple[int, int, int] = (255, 255, 255)
     systems: list[str] = field(default_factory=list)
     severity: list[str] = field(default_factory=list)
@@ -155,6 +162,7 @@ def load_profile(path: str | Path, rules_expected: bool = True) -> Profile:
             duration=float(rule_data.get("duration", 5)),
             hold=bool(rule_data.get("hold", False)),
             strip_prefix=bool(rule_data.get("strip_prefix", False)),
+            overlay=bool(rule_data.get("overlay", False)),
             systems=rule_data.get("systems", []),
             severity=severity_list,
             tags=[str(t) for t in rule_data.get("tags", [])],
@@ -200,7 +208,9 @@ def match_rule(
     3. Check if message system matches rule systems (or wildcard "*")
     4. Check if message severity matches rule severity list
     5. Check that every rule tag is one of the message's tags
-    6. First match wins
+    6. First match wins, except that a rule whose templated `image` comes out
+       empty does not match: the message did not name a picture
+    7. An `overlay` rule carries the next match after it as `then`
     """
     msg_system = msg.system.lower()
     msg_severity = msg.severity.lower()
@@ -211,6 +221,7 @@ def match_rule(
         logger.info("quiet hours: not showing %s message from %s", msg_severity, msg_system)
         return None
 
+    first: DisplayConfig | None = None
     for rule_name, config in profile.rules.items():
         # Check system match
         system_match = "*" in config.systems or msg_system in [s.lower() for s in config.systems]
@@ -226,8 +237,24 @@ def match_rule(
         if not all(tag in msg_tags for tag in config.tags):
             continue
 
+        resolved = _resolve_config(config, msg, profile)
+        # A picture the message was to name and did not: the rule is not for
+        # this message, rather than a display of nothing.
+        if config.image and not resolved.image:
+            logger.debug("rule '%s' names no image for this message, skipped", rule_name)
+            continue
+
         logger.debug("matched rule '%s' for system=%s severity=%s", rule_name, msg_system, msg_severity)
-        return _resolve_config(config, msg, profile)
+        if first is not None:
+            # The display an overlay gives way to. Itself an overlay, it would
+            # chain without end; it gets no `then` of its own.
+            first.then = resolved
+            return first
+        if not config.overlay:
+            return resolved
+        first = resolved
+    # An overlay with nothing after it is still worth showing.
+    return first
 
     return None
 
@@ -256,27 +283,37 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
         duration=config.duration,
         hold=config.hold,
         strip_prefix=config.strip_prefix,
+        overlay=config.overlay,
         systems=config.systems,
         severity=config.severity,
         tags=config.tags,
     )
 
-    # Render Jinja2 text template
+    # Render the Jinja2 templates: the text, and the image, so a message can
+    # name its own picture (#148). An image template that fails renders
+    # empty, which match_rule takes as no picture named.
+    context = {
+        "title": msg.title,
+        "message": msg.message,
+        "severity": msg.severity,
+        "system": msg.system,
+        "author": msg.author,
+        "tags": msg.tags,
+        "url": msg.url,
+        "timestamp": msg.timestamp,
+        "tag": lambda name: tag_value(msg.tags, name),
+    }
     if resolved.text:
         try:
-            template = _JINJA.from_string(resolved.text)
-            resolved.text = template.render(
-                title=msg.title,
-                message=msg.message,
-                severity=msg.severity,
-                system=msg.system,
-                author=msg.author,
-                tags=msg.tags,
-                url=msg.url,
-                timestamp=msg.timestamp,
-            )
+            resolved.text = _JINJA.from_string(resolved.text).render(context)
         except jinja2.TemplateError:
             logger.exception("failed to render template for text: %s", resolved.text)
+    if "{" in resolved.image:
+        try:
+            resolved.image = _JINJA.from_string(resolved.image).render(context).strip()
+        except jinja2.TemplateError:
+            logger.exception("failed to render template for image: %s", resolved.image)
+            resolved.image = ""
 
     if resolved.kind.lower() == "score":
         # A board arrives in more than one shape (see parse_score). Rewritten
@@ -311,6 +348,16 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
         )
 
     return resolved
+
+
+def tag_value(tags: str, name: str) -> str:
+    """The value of `name=value` among a message's comma-separated tags, or
+    empty. `tag('figure')` in a rule's template (#148)."""
+    for element in tags.split(",") if tags else ():
+        key, sep, value = element.strip().partition("=")
+        if sep and key == name:
+            return value
+    return ""
 
 
 # ----------------------------------------------------------------- timestamps

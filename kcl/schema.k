@@ -78,6 +78,22 @@ displayRules:
     text: "{{ system }}: {{ title }}"
     font: 6x10.bdf
     duration: 5
+  # The winner's figure, cheering, after a won set or match (#148). zaehlwerk
+  # names it in the message's tags as figure=<URL>, a GIF that Schmetterpause
+  # draws for this panel (schmetterpause ADR-0030). A message without one --
+  # every point, an older zaehlwerk, a match nobody stands behind -- renders
+  # an empty image and this rule does not match.
+  #
+  # `overlay`: once the GIF has run its duration, the same message goes on
+  # the panel as tabletennis-score draws it, so the board with "SATZ"/"SIEG"
+  # is what stays, not the clock. Must stay above tabletennis-score.
+  tabletennis-figure:
+    systems: [tabletennis]
+    severity: [INFO, SUCCESS]
+    kind: gif
+    image: "{{ tag('figure') }}"
+    overlay: true
+    duration: 4.6
   # A live score, not a notification: it should stay readable between points
   # rather than scroll past once. `hold` keeps it up until the next point
   # replaces it.
