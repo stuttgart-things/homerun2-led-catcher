@@ -107,3 +107,94 @@ def test_empty_profile_no_match():
     msg = Message(title="test", severity="info", system="github")
     config = match_rule(profile, msg)
     assert config is None
+
+
+# --- templated image and overlay (#148) -------------------------------------
+
+
+def _profile_from(tmp_path, body: str):
+    path = tmp_path / "profile.yaml"
+    path.write_text(body)
+    return load_profile(path)
+
+
+def test_the_image_is_a_template_over_the_messages_tags(tmp_path):
+    profile = _profile_from(
+        tmp_path,
+        """
+displayRules:
+  picture:
+    systems: [s]
+    kind: image
+    image: "{{ tag('pic') }}"
+""",
+    )
+    config = match_rule(profile, Message(title="t", system="s", tags="a=1,pic=https://x.example/p.png,b=2"))
+
+    assert config is not None
+    assert config.image == "https://x.example/p.png"
+
+
+def test_a_rule_whose_image_renders_empty_does_not_match(tmp_path):
+    profile = _profile_from(
+        tmp_path,
+        """
+displayRules:
+  picture:
+    systems: [s]
+    kind: image
+    image: "{{ tag('pic') }}"
+  words:
+    systems: [s]
+    kind: static
+    text: "{{ title }}"
+""",
+    )
+    config = match_rule(profile, Message(title="no picture", system="s", tags="a=1"))
+
+    assert config is not None
+    assert config.kind == "static" and config.text == "no picture"
+
+
+def test_an_overlay_carries_the_next_match_and_only_one(tmp_path):
+    profile = _profile_from(
+        tmp_path,
+        """
+displayRules:
+  first:
+    systems: [s]
+    kind: static
+    text: one
+    overlay: true
+  second:
+    systems: [s]
+    kind: static
+    text: two
+    overlay: true
+  third:
+    systems: [s]
+    kind: static
+    text: three
+""",
+    )
+    config = match_rule(profile, Message(title="t", system="s"))
+
+    assert config is not None and config.text == "one"
+    assert config.then is not None and config.then.text == "two"
+    assert config.then.then is None, "an overlay's follow-up does not chain on"
+
+
+def test_a_plain_image_name_is_left_as_it_is(tmp_path):
+    profile = _profile_from(
+        tmp_path,
+        """
+displayRules:
+  sunset:
+    systems: [s]
+    kind: gif
+    image: sunset.gif
+""",
+    )
+    config = match_rule(profile, Message(title="t", system="s"))
+
+    assert config is not None and config.image == "sunset.gif"

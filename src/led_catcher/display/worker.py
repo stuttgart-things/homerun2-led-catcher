@@ -49,7 +49,7 @@ import logging
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 logger = logging.getLogger(__name__)
 
@@ -325,18 +325,59 @@ class DisplayWorker:
                     else:
                         self._wake.wait(timeout=IDLE_POLL_SECONDS)
                     continue
-                self._show(config)
+                if self._show(config):
+                    self._show_then(config)
         finally:
             self._set_showing(None)
             self._blank()
 
-    def _show(self, config) -> None:
+    def _localise(self, config):
+        """The display with an https image swapped for its cached file name.
+
+        A rule can take its picture from the message (#148), and a message
+        names a URL, not a file in visual_aid/. POST /display fetches before
+        it submits; a message from the stream has nobody to do that but this
+        thread, which may block. A picture that cannot be fetched is logged
+        and the display skipped -- returning None -- so an overlay still gives
+        way to what it played over.
+        """
+        from led_catcher.display.remote import RemoteImageError, fetch_image, is_remote
+
+        image = str(getattr(config, "image", "") or "")
+        if not is_remote(image):
+            return config
+        try:
+            name = fetch_image(image)
+        except RemoteImageError as err:
+            logger.warning("image not shown, fetching %s failed: %s", image, err)
+            return None
+        return replace(config, image=name)
+
+    def _show_then(self, config) -> None:
+        """After an overlay, what it played over (#148): the same message as
+        the next rule draws it, typically the held score after the winner's
+        figure. Only on a free panel: anything submitted meanwhile is newer
+        than the message the overlay came with, and goes first."""
+        then = getattr(config, "then", None)
+        if then is None:
+            return
+        with self._lock:
+            if self._pending or self._stopping.is_set():
+                return
+        self._show(then)
+
+    def _show(self, config) -> bool:
+        """Run one display. False when blank() or stop() cut it short."""
         from led_catcher.display.modes import display_event
 
         if config is _BLANK:
             self._set_showing(None)
             self._blank()
-            return
+            return False
+
+        config = self._localise(config)
+        if config is None:
+            return True
 
         showing = Showing(config, time.time())
         self._set_showing(showing)
@@ -344,7 +385,7 @@ class DisplayWorker:
             display_event(self._display, config, wait=self._wait)
         except _Interrupted:
             self._set_showing(None)
-            return
+            return False
         except Exception:
             # A broken font or image must not take the worker down with it, or
             # the panel stays on whatever it happened to be showing.
@@ -355,6 +396,7 @@ class DisplayWorker:
             with self._lock:
                 if self._showing is showing:
                     self._showing = None
+        return True
 
     def _run_idle_screen(self) -> None:
         """Show the idle screen until something is submitted, it is switched or

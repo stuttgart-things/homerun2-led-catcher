@@ -14,11 +14,12 @@ displayRules:
     tags: [<tag1>, ...]                    # optional; every one must be a whole element of the message's tags
     kind: <display-mode>                   # static, text, ticker, image, gif, score, card
     text: "<jinja2-template>"              # for text modes; card: the scrolling line
-    image: "<filename>"                    # for image/gif modes
+    image: "<filename|https-url|template>" # for image/gif modes; templated like text
     font: "<font-file>"                    # BDF font file (not used by score, card)
     duration: <seconds>                    # display duration
     hold: <true|false>                     # keep it up until replaced
     strip_prefix: <true|false>             # card: drop "[SEVERITY] system" from the title
+    overlay: <true|false>                  # afterwards, show the message as the next rule draws it
 
 quietHours:                              # optional, see "Quiet hours"
   from: "19:00"
@@ -214,6 +215,39 @@ tabletennis-score:
 This is the shipped rule. zaehlwerk puts the board in its tags; a zaehlwerk
 that does not yet sends only the title, which still draws `7:5` as a board,
 and `SET 1:0` falls back to static text.
+
+### A picture the message names, and `overlay`
+
+`image` is a Jinja template like `text`, so a message can name its own
+picture. `tag('name')` is the value of `name=value` among the message's tags.
+What it renders to is a file in `visual_aid/` or an `https://` URL, which the
+display worker fetches into the remote-image cache before it shows it, with
+the same limits as `POST /display`. A rule whose image renders **empty** does
+not match, and the next rule gets the message. So a rule can be about the
+messages that carry a picture without catching the ones that do not. A URL
+that cannot be fetched is logged and its display skipped.
+
+`overlay: true` plays a display *over* what the message would otherwise show.
+Once it has run its `duration`, the same message goes on the panel as the next
+matching rule draws it. That happens only if nothing newer is waiting; a newer
+message wins as always. The shipped rule for zaehlwerk's won sets and matches
+works this way:
+
+```yaml
+tabletennis-figure:
+  systems: [tabletennis]
+  severity: [INFO, SUCCESS]
+  kind: gif
+  image: "{{ tag('figure') }}"
+  overlay: true
+  duration: 4.6
+```
+
+The winner's figure cheers for two loops of its GIF (Schmetterpause draws it
+for this panel, schmetterpause ADR-0030), and then the board with `SATZ`/`SIEG`
+is held, not the clock. Every point carries no `figure=` and goes straight to
+`tabletennis-score`. The overlay's rule must stand above the rule it gives
+way to.
 
 ## `duration` and `hold`
 
