@@ -1088,6 +1088,10 @@
                 current = { token: token, held: false, idle: layer !== null };
                 try {
                     await (layer === 'playlist' ? playPlaylist(token) : layer ? idleClock(token) : play(ev, token));
+                    // An overlay gives way to what it played over, the held
+                    // score after the winner's figure, on a free panel only
+                    // (DisplayWorker._show_then, #148).
+                    if (ev && ev.then && !pending.length) pending.push(ev.then);
                 } catch (e) {
                     // Cancelled: replaced (left lit) or blanked (already dark).
                     if (!(e instanceof Cancelled)) console.error((layer || 'display') + ' failed', ev, e);

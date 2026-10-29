@@ -50,6 +50,9 @@ class LedEvent:
     source: Message | None = field(default=None, repr=False, compare=False)
     # The id of the event this one shows again, 0 for a new event.
     replay_of: int = 0
+    # An overlay's: what it played over, which the canvas shows after it on a
+    # free panel (#148). Not recorded on the timeline of its own.
+    then: LedEvent | None = None
 
     def severity_css(self) -> str:
         return {
