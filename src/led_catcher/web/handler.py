@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime
 from typing import Callable
 
@@ -34,8 +34,38 @@ def create_web_handler(profile: Profile, tracker: EventTracker):
     return web_handler
 
 
+def _localised(config: DisplayConfig | None) -> DisplayConfig | None:
+    """`config` with an https image swapped for its cached file name, as
+    DisplayWorker._localise does for the panel.
+
+    A rule can take its picture from the message (#148), and the message names
+    a URL. The canvas asks /api/preview/image for a bare file name only, so
+    without this it got a 400 and drew its static-text fallback: "---" in the
+    severity's colour. An overlay whose picture cannot be fetched gives way to
+    what it played over, as on the panel; any other display keeps its URL and
+    falls back to text.
+
+    Blocking, on the consumer's loop, for the first download of each URL only:
+    fetch_image answers from the cache after that. Done here rather than on a
+    thread so the events stay in the order they came, and the figure is on the
+    timeline before the next point.
+    """
+    from led_catcher.display.remote import RemoteImageError, fetch_image, is_remote
+
+    image = str(getattr(config, "image", "") or "")
+    if config is None or not is_remote(image):
+        return config
+    try:
+        name = fetch_image(image)
+    except RemoteImageError as err:
+        logger.warning("image not shown in the simulator, fetching %s failed: %s", image, err)
+        return config.then if config.overlay else config
+    return replace(config, image=name)
+
+
 def build_event(profile: Profile, msg: Message, config: DisplayConfig | None) -> LedEvent:
     """The timeline event for `msg`, drawn as `config` says, or unmatched."""
+    config = _localised(config)
     kind = "text"
     duration = 5.0
     hold = False
@@ -74,6 +104,9 @@ def build_event(profile: Profile, msg: Message, config: DisplayConfig | None) ->
         card=card,
         matched=config is not None,
         source=msg,
+        # What an overlay gives way to, played by the canvas once the overlay
+        # is over and nothing newer waits (DisplayWorker._show_then).
+        then=build_event(profile, msg, config.then) if config is not None and config.then is not None else None,
     )
 
 

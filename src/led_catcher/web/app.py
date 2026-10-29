@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
 
 from led_catcher.handlers.display_api import RateLimiter
-from led_catcher.web.events import EventTracker
+from led_catcher.web.events import EventTracker, LedEvent
 from led_catcher.web.fragments import create_fragments_router
 from led_catcher.web.preview import create_preview_router
 
@@ -171,32 +171,7 @@ def create_web_app(
 
     @app.get("/api/events")
     async def api_events():
-        return [
-            {
-                "timestamp": e.timestamp,
-                "severity": e.severity,
-                "system": e.system,
-                "title": e.title,
-                "author": e.author,
-                "kind": e.kind,
-                # The scoreboard canvas parses its layout out of this; the text
-                # modes ignore it. Without it a score event reaches the
-                # simulator as a coloured row with nothing to draw.
-                "message": e.message,
-                "color": e.color_hex(),
-                "duration": e.duration,
-                "hold": e.hold,
-                "text": e.text,
-                "font": e.font,
-                "image": e.image,
-                # kind 'card': the panel's layout, drawn as is by the canvas.
-                "card": e.card,
-                "matched": e.matched,
-                "at": e.at,
-                "id": e.id,
-            }
-            for e in tracker.recent(50)
-        ]
+        return [_event_json(e) for e in tracker.recent(50)]
 
     @app.get("/api/events/stream")
     async def events_stream(request: Request):
@@ -230,6 +205,35 @@ def create_web_app(
             return {"id": event.id, "replayOf": event.replay_of}
 
     return app
+
+
+def _event_json(e: LedEvent) -> dict:
+    """An event as the canvas reads it from /api/events."""
+    return {
+        "timestamp": e.timestamp,
+        "severity": e.severity,
+        "system": e.system,
+        "title": e.title,
+        "author": e.author,
+        "kind": e.kind,
+        # The scoreboard canvas parses its layout out of this; the text
+        # modes ignore it. Without it a score event reaches the
+        # simulator as a coloured row with nothing to draw.
+        "message": e.message,
+        "color": e.color_hex(),
+        "duration": e.duration,
+        "hold": e.hold,
+        "text": e.text,
+        "font": e.font,
+        "image": e.image,
+        # kind 'card': the panel's layout, drawn as is by the canvas.
+        "card": e.card,
+        "matched": e.matched,
+        "at": e.at,
+        "id": e.id,
+        # An overlay's: what the canvas plays after it (#148).
+        "then": _event_json(e.then) if e.then is not None else None,
+    }
 
 
 async def event_stream(
