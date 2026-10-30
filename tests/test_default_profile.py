@@ -102,7 +102,8 @@ def test_a_tabletennis_score_gets_its_own_rule(tmp_path):
 
 
 def test_the_tabletennis_rule_draws_the_board_from_zaehlwerks_tags(tmp_path):
-    """Names, sets and who serves come from the tags, not from the title."""
+    """Names, sets, who serves and who took the point come from the tags, not
+    from the title."""
     profile = _shipped_profile(tmp_path)
     config = match_rule(
         profile,
@@ -110,7 +111,7 @@ def test_the_tabletennis_rule_draws_the_board_from_zaehlwerks_tags(tmp_path):
     )
 
     assert config is not None
-    assert config.text == "points=5:10;sets=1:1;set=3;serve=b;a=ANNA;b=BERND;played=11-8,9-11"
+    assert config.text == "points=5:10;sets=1:1;set=3;serve=b;a=ANNA;b=BERND;played=11-8,9-11;last=b"
 
 
 def test_a_won_match_greens_the_winner(tmp_path):

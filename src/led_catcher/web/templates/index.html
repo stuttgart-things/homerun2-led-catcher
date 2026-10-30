@@ -694,6 +694,7 @@
             ',': [[0],[0],[0],[1],[1]],
             ':': [[0],[1],[0],[1],[0]],
             '-': [[0,0,0],[0,0,0],[1,1,1],[0,0,0],[0,0,0]],
+            '+': [[0,0,0],[0,1,0],[1,1,1],[0,1,0],[0,0,0]],
             '_': [[0,0,0],[0,0,0],[0,0,0],[0,0,0],[1,1,1]],
             '/': [[0,0,1],[0,0,1],[0,1,0],[1,0,0],[1,0,0]],
             '(': [[0,1],[1,0],[1,0],[1,0],[0,1]],
@@ -785,6 +786,7 @@
                 banner: (f.banner || '').toUpperCase(),
                 source: (f.source || '').toUpperCase(),
                 colours: (colourA && colourB) ? [colourA, colourB] : null,
+                last: 'last' in f ? scoreSide(f.last) : null,
                 bestOf: positive(f.best_of),
                 to: positive(f.to)
             };
@@ -888,6 +890,10 @@
 
             if (sc.banner) {
                 drawCentred(sc.banner, SC.yBanner, sc.winner !== null ? SC_COL.won : SC_COL.serve);
+            } else if (sc.last !== null) {
+                // As render(): who took the point, in their colour.
+                drawCentred('+1 ' + sc.names[sc.last], SC.yBanner,
+                            sc.colours ? sc.colours[sc.last] : SC_COL.label);
             }
             if (sc.played.length) {
                 const recent = sc.played.slice(-SC.maxPlayed).map(function (p) { return p[0] + '-' + p[1]; });
