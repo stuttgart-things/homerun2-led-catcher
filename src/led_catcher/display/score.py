@@ -14,9 +14,10 @@ module owns the pixels. See zaehlwerk ADR-0001.
 
 from __future__ import annotations
 
+import colorsys
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,28 @@ COLON_X = 30
 MAX_NAME = 6
 MAX_PLAYED = 3
 
+# The colours a player's name may take on the panel. A figure's colour is
+# picked for a screen: a grey blade is a fine choice there and, on LEDs, dimmed
+# white — close to the unlit pixels and to the white serve marker. So each
+# player's colour is mapped to the nearest of these by hue, and a colour with
+# too little of one (a grey) to the yellow, which no figure's blade is. Two
+# players that land on the same one are told apart: the second gets the next
+# nearest. The simulator ships the same list.
+PANEL_COLORS: tuple[tuple[int, int, int], ...] = (
+    (0, 110, 255),  # blue
+    (0, 200, 255),  # cyan
+    (0, 230, 160),  # teal
+    (40, 220, 40),  # green
+    (255, 200, 0),  # yellow
+    (255, 100, 0),  # orange
+    (255, 30, 50),  # red
+    (255, 0, 170),  # magenta
+    (150, 60, 255),  # violet
+)
+_GREY_COLOR = 4
+# Below this HSV saturation a colour is a grey and has no hue worth matching.
+_MIN_SATURATION = 0.25
+
 _SEGMENTS = {
     "0": "abcdef",
     "1": "bc",
@@ -79,11 +102,13 @@ _SEGMENTS = {
 
 # 3x5 glyphs, the same set the HTMX simulator ships.
 #
-# A has a pointed roof and O and Q round corners: with flat ones, A was H with
-# one pixel more ("SATZ" read "SHTZ") and O a box that read as D from across
-# the room. The digit 0 keeps its square corners, which also tells it from O.
+# A is a column wider than the rest, with a roof, and O and Q have round
+# corners: with flat ones, A was H with one pixel more ("SATZ" read "SHTZ") and
+# O a box that read as D from across the room. A three-wide A with a single
+# pixel for its peak still read as H ("ADA" as "HDH"); four wide, the roof
+# shows. The digit 0 keeps its square corners, which also tells it from O.
 _GLYPHS: dict[str, tuple[str, ...]] = {
-    "A": ("010", "101", "111", "101", "101"),
+    "A": ("0110", "1001", "1111", "1001", "1001"),
     "B": ("110", "101", "110", "101", "110"),
     "C": ("111", "100", "100", "100", "111"),
     "D": ("110", "101", "101", "101", "110"),
@@ -153,6 +178,11 @@ class Score:
     # How long the match is, as zaehlwerk sends it; None when not stated.
     best_of: int | None = None
     to: int | None = None
+    # Who stands at which end of the table, (left, right), as zaehlwerk sends
+    # it; None when not stated, and a stays left. Every other field is about
+    # a and b; the panel is read as left against right, so it draws the
+    # player at the left end on the left.
+    ends: tuple[int, int] | None = None
 
 
 def _pair(raw: str, sep: str = ":") -> tuple[int, int] | None:
@@ -274,6 +304,11 @@ def parse_score(text: str) -> Score | None:
     if color_a is not None and color_b is not None:
         score.colors = (color_a, color_b)
 
+    ends = fields.get("ends", "").partition(":")
+    left, right = _side(ends[0]), _side(ends[2])
+    if left is not None and right is not None and left != right:
+        score.ends = (left, right)
+
     for key in ("best_of", "to"):
         try:
             value = int(fields.get(key, ""))
@@ -317,7 +352,60 @@ def format_score(score: Score) -> str:
         parts.append(f"best_of={score.best_of}")
     if score.to is not None:
         parts.append(f"to={score.to}")
+    if score.ends is not None:
+        parts.append(f"ends={'ab'[score.ends[0]]}:{'ab'[score.ends[1]]}")
     return ";".join(parts)
+
+
+def _ranked(color: tuple[int, int, int]) -> list[int]:
+    """The panel colours, nearest to `color` first."""
+    hue, saturation, _ = colorsys.rgb_to_hsv(*(c / 255 for c in color))
+    if saturation < _MIN_SATURATION:
+        return [_GREY_COLOR, *(i for i in range(len(PANEL_COLORS)) if i != _GREY_COLOR)]
+
+    def distance(i: int) -> float:
+        other = colorsys.rgb_to_hsv(*(c / 255 for c in PANEL_COLORS[i]))[0]
+        d = abs(hue - other)
+        return min(d, 1 - d)
+
+    return sorted(range(len(PANEL_COLORS)), key=distance)
+
+
+def panel_colors(
+    colors: tuple[tuple[int, int, int], tuple[int, int, int]],
+) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Map the players' colours onto PANEL_COLORS, a's first, and never both
+    onto the same one."""
+    first = _ranked(colors[0])[0]
+    second = next(i for i in _ranked(colors[1]) if i != first)
+    return PANEL_COLORS[first], PANEL_COLORS[second]
+
+
+def _swapped(pair):
+    return pair[1], pair[0]
+
+
+def from_the_left(score: Score) -> Score:
+    """The board with the player at the left end of the table as a: what the
+    panel draws on its left. Unchanged while a stands left."""
+    if score.ends != (1, 0):
+        return score
+
+    def other(side: int | None) -> int | None:
+        return None if side is None else 1 - side
+
+    return replace(
+        score,
+        points=_swapped(score.points),
+        sets=_swapped(score.sets),
+        serving=other(score.serving),
+        names=_swapped(score.names),
+        played=[_swapped(p) for p in score.played],
+        winner=other(score.winner),
+        colors=None if score.colors is None else _swapped(score.colors),
+        last=other(score.last),
+        ends=(0, 1),
+    )
 
 
 # --------------------------------------------------------------------- drawing
@@ -407,6 +495,11 @@ def draw_number(matrix, value: int, x: int, y: int, color: tuple[int, int, int])
 
 def render(matrix, score: Score) -> None:
     """Draw the whole scoreboard. Does not clear or swap — the caller owns that."""
+    # The colours are mapped before the board is turned, so which player gets
+    # the nearer colour does not change with the ends.
+    if score.colors is not None:
+        score = replace(score, colors=panel_colors(score.colors))
+    score = from_the_left(score)
     # A match of one set has no set number and no sets won worth a corner:
     # it says what the set is played to instead. Without the length stated,
     # the header is what it always was.
