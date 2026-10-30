@@ -371,3 +371,35 @@ def test_a_longer_match_counts_its_sets_as_before():
     render(with_length, Score(points=(3, 2), sets=(1, 0), set_number=2, best_of=3, to=11))
     render(without, Score(points=(3, 2), sets=(1, 0), set_number=2))
     assert with_length.pixels == without.pixels
+
+
+# ------------------------------------------------------------------- glyphs
+
+
+def _simulator_font() -> dict[str, tuple[str, ...]]:
+    """The simulator's FONT table, as the panel's glyph strings."""
+    import json
+    import re
+    from pathlib import Path
+
+    html = (Path(__file__).parent.parent / "src" / "led_catcher" / "web" / "templates" / "index.html").read_text()
+    body = re.search(r"const FONT = \{(.*?)\n\s*\};", html, re.S)
+    assert body is not None
+    font = {}
+    for char, rows in re.findall(r"'(.)':\s*(\[\[.*?\]\])", body.group(1)):
+        font[char] = tuple("".join(str(bit) for bit in row) for row in json.loads(rows))
+    return font
+
+
+def test_the_simulator_draws_the_panels_glyphs():
+    """The canvas copies the panel's glyphs by hand; a glyph changed in one and
+    not the other shows a board in the simulator that the panel does not."""
+    font = _simulator_font()
+    for char, glyph in score_mod._GLYPHS.items():
+        assert font.get(char) == glyph, char
+
+
+@pytest.mark.parametrize(("char", "other"), [("A", "H"), ("O", "D"), ("O", "0")])
+def test_letters_that_read_alike_from_afar_differ_in_their_outline(char, other):
+    glyphs = score_mod._GLYPHS
+    assert glyphs[char][0] != glyphs[other][0] or glyphs[char][-1] != glyphs[other][-1]
