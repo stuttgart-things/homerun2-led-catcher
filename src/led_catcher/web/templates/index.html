@@ -741,6 +741,11 @@
             return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
         }
 
+        function positive(raw) {
+            const n = parseInt(raw, 10);
+            return (isNaN(n) || n <= 0) ? null : n;
+        }
+
         function scorePair(raw, sep) {
             const parts = String(raw || '').split(sep);
             if (parts.length < 2) return null;
@@ -779,7 +784,9 @@
                 played: played,
                 banner: (f.banner || '').toUpperCase(),
                 source: (f.source || '').toUpperCase(),
-                colours: (colourA && colourB) ? [colourA, colourB] : null
+                colours: (colourA && colourB) ? [colourA, colourB] : null,
+                bestOf: positive(f.best_of),
+                to: positive(f.to)
             };
         }
 
@@ -839,9 +846,17 @@
 
         function drawScore(sc) {
             clearMatrix();
-            drawTextLine('SATZ ' + sc.setNumber, SC.yHeader,
-                         SC_COL.label[0], SC_COL.label[1], SC_COL.label[2], 1);
-            drawRight(sc.sets[0] + ':' + sc.sets[1], 62, SC.yHeader, SC_COL.label);
+            // As render(): a match of one set says what it is played to.
+            if (sc.bestOf === 1) {
+                if (sc.to !== null) {
+                    drawTextLine('BIS ' + sc.to, SC.yHeader,
+                                 SC_COL.label[0], SC_COL.label[1], SC_COL.label[2], 1);
+                }
+            } else {
+                drawTextLine('SATZ ' + sc.setNumber, SC.yHeader,
+                             SC_COL.label[0], SC_COL.label[1], SC_COL.label[2], 1);
+                drawRight(sc.sets[0] + ':' + sc.sets[1], 62, SC.yHeader, SC_COL.label);
+            }
             fillBox(1, SC.yDivider, 62, 1, SC_COL.faint);
 
             let leftCol = SC_COL.score, rightCol = SC_COL.score;

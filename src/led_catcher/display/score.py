@@ -142,6 +142,9 @@ class Score:
     # the game's board and their cord on the spectator view. None for both
     # when not stated, and the names keep the panel's own colours.
     colors: tuple[tuple[int, int, int], tuple[int, int, int]] | None = None
+    # How long the match is, as zaehlwerk sends it; None when not stated.
+    best_of: int | None = None
+    to: int | None = None
 
 
 def _pair(raw: str, sep: str = ":") -> tuple[int, int] | None:
@@ -257,6 +260,14 @@ def parse_score(text: str) -> Score | None:
     color_b = _color(fields.get("color_b", ""))
     if color_a is not None and color_b is not None:
         score.colors = (color_a, color_b)
+
+    for key in ("best_of", "to"):
+        try:
+            value = int(fields.get(key, ""))
+        except ValueError:
+            continue
+        if value > 0:
+            setattr(score, key, value)
     return score
 
 
@@ -287,6 +298,10 @@ def format_score(score: Score) -> str:
     if score.colors is not None:
         for key, (r, g, b) in zip(("color_a", "color_b"), score.colors, strict=True):
             parts.append(f"{key}=#{r:02x}{g:02x}{b:02x}")
+    if score.best_of is not None:
+        parts.append(f"best_of={score.best_of}")
+    if score.to is not None:
+        parts.append(f"to={score.to}")
     return ";".join(parts)
 
 
@@ -377,8 +392,15 @@ def draw_number(matrix, value: int, x: int, y: int, color: tuple[int, int, int])
 
 def render(matrix, score: Score) -> None:
     """Draw the whole scoreboard. Does not clear or swap — the caller owns that."""
-    draw_text(matrix, f"SATZ {score.set_number}", 1, Y_HEADER, COLOR_LABEL)
-    draw_text_right(matrix, f"{score.sets[0]}:{score.sets[1]}", 62, Y_HEADER, COLOR_LABEL)
+    # A match of one set has no set number and no sets won worth a corner:
+    # it says what the set is played to instead. Without the length stated,
+    # the header is what it always was.
+    if score.best_of == 1:
+        if score.to is not None:
+            draw_text(matrix, f"BIS {score.to}", 1, Y_HEADER, COLOR_LABEL)
+    else:
+        draw_text(matrix, f"SATZ {score.set_number}", 1, Y_HEADER, COLOR_LABEL)
+        draw_text_right(matrix, f"{score.sets[0]}:{score.sets[1]}", 62, Y_HEADER, COLOR_LABEL)
     _fill(matrix, 1, Y_DIVIDER, 62, 1, COLOR_FAINT)
 
     # The points. A finished match greens the winner and dims the loser, so the
