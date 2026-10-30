@@ -151,6 +151,7 @@ def test_a_set_or_match_title_is_no_board(raw):
         "points=11:9;sets=3:1;set=4;winner=a;a=A;b=B",
         "points=0:0;sets=0:0;set=1;a=A;b=B",
         "points=3:2;sets=0:0;set=1;serve=a;a=CLEO;b=EMIL;color_a=#3aa6ff;color_b=#4d7c4a",
+        "points=3:2;sets=0:0;set=1;a=A;b=B;best_of=1;to=11",
     ],
 )
 def test_format_score_round_trips_the_payload(raw):
@@ -338,3 +339,35 @@ def test_without_colours_the_server_is_orange_as_before():
     assert _name_pixels(m, left=True) == {score_mod.COLOR_SERVE}
     assert _name_pixels(m, left=False) == {score_mod.COLOR_LABEL}
     assert m.pixels[(2, score_mod.Y_NAMES + 2)] == score_mod.COLOR_SERVE
+
+
+# ------------------------------------------------------------- match length
+
+
+def _header(m: FakeMatrix) -> set[int]:
+    return {x for (x, y) in m.pixels if score_mod.Y_HEADER <= y < score_mod.Y_HEADER + 5}
+
+
+def _drawn(text: str, x: int = 1) -> FakeMatrix:
+    m = FakeMatrix()
+    score_mod.draw_text(m, text, x, score_mod.Y_HEADER, score_mod.COLOR_LABEL)
+    return m
+
+
+def test_parse_the_length_from_zaehlwerks_tags():
+    s = parse_score("match=m1,set=1,points=3:2,player_a=Cleo,player_b=Emil,best_of=1,to=11")
+    assert s is not None
+    assert (s.best_of, s.to) == (1, 11)
+
+
+def test_a_match_of_one_set_says_what_it_is_played_to():
+    m = FakeMatrix()
+    render(m, Score(points=(3, 2), best_of=1, to=11))
+    assert _header(m) == set(x for x, _ in _drawn("BIS 11").pixels)
+
+
+def test_a_longer_match_counts_its_sets_as_before():
+    with_length, without = FakeMatrix(), FakeMatrix()
+    render(with_length, Score(points=(3, 2), sets=(1, 0), set_number=2, best_of=3, to=11))
+    render(without, Score(points=(3, 2), sets=(1, 0), set_number=2))
+    assert with_length.pixels == without.pixels
