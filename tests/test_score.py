@@ -150,6 +150,7 @@ def test_a_set_or_match_title_is_no_board(raw):
         "points=8:6;sets=1:1;set=3;serve=b;a=ANJA;b=BEN;played=11-8,9-11;banner=SATZBALL;source=BUTTON-A",
         "points=11:9;sets=3:1;set=4;winner=a;a=A;b=B",
         "points=0:0;sets=0:0;set=1;a=A;b=B",
+        "points=3:2;sets=0:0;set=1;serve=a;a=CLEO;b=EMIL;color_a=#3aa6ff;color_b=#4d7c4a",
     ],
 )
 def test_format_score_round_trips_the_payload(raw):
@@ -295,3 +296,45 @@ def test_display_event_routes_the_score_kind():
     display_event(m, DisplayConfig(kind="score", text="points=8:6", hold=True, duration=0), noop_wait)
     assert m.pixels
     assert not m.texts, "score payload should render as pixels, not as BDF text"
+
+
+# ------------------------------------------------------------ player colours
+
+
+def test_parse_the_players_colours_from_zaehlwerks_tags():
+    s = parse_score("match=m1,set=1,points=3:2,serve=a,player_a=Cleo,player_b=Emil,color_a=#3aa6ff,color_b=#4D7C4A")
+    assert s is not None
+    assert s.colors == ((0x3A, 0xA6, 0xFF), (0x4D, 0x7C, 0x4A))
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["color_a=#3aa6ff", "color_a=#3aa6ff;color_b=green", "color_a=#3aa6ff;color_b=#4d7c4", "color_b=#4d7c4a"],
+)
+def test_colours_count_only_both_together(raw):
+    s = parse_score(f"points=1:1;{raw}")
+    assert s is not None
+    assert s.colors is None
+
+
+def _name_pixels(m: FakeMatrix, left: bool) -> set[tuple[int, int, int]]:
+    rows = range(score_mod.Y_NAMES, score_mod.Y_NAMES + 5)
+    return {c for (x, y), c in m.pixels.items() if y in rows and (5 <= x < 30 if left else 34 <= x <= 58)}
+
+
+def test_the_names_take_the_players_colours_and_the_marker_turns_white():
+    m = FakeMatrix()
+    blue, green = (0x3A, 0xA6, 0xFF), (0x4D, 0x7C, 0x4A)
+    render(m, Score(points=(3, 2), serving=0, names=("CLEO", "EMIL"), colors=(blue, green)))
+    assert _name_pixels(m, left=True) == {blue}
+    assert _name_pixels(m, left=False) == {green}
+    assert m.pixels[(2, score_mod.Y_NAMES + 2)] == score_mod.COLOR_MARKER
+    assert score_mod.COLOR_SERVE not in m.pixels.values(), "orange is the server without colours only"
+
+
+def test_without_colours_the_server_is_orange_as_before():
+    m = FakeMatrix()
+    render(m, Score(points=(3, 2), serving=0, names=("CLEO", "EMIL")))
+    assert _name_pixels(m, left=True) == {score_mod.COLOR_SERVE}
+    assert _name_pixels(m, left=False) == {score_mod.COLOR_LABEL}
+    assert m.pixels[(2, score_mod.Y_NAMES + 2)] == score_mod.COLOR_SERVE

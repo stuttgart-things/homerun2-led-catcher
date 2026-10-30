@@ -37,6 +37,9 @@ COLOR_LABEL = (116, 122, 190)
 COLOR_SERVE = (249, 115, 22)
 COLOR_FAINT = (70, 78, 110)
 COLOR_WON = (34, 197, 94)
+# The serve marker once the names carry the players' colours: neutral, so it
+# does not run into the name it stands before.
+COLOR_MARKER = (255, 255, 255)
 
 # Row allocation. Kept as constants because the simulator draws the same layout
 # and the two drifting apart is the failure that is hardest to notice.
@@ -135,6 +138,10 @@ class Score:
     banner: str = ""
     winner: int | None = None
     source: str = ""
+    # Each player's colour, as zaehlwerk sends it: the one their paddle has on
+    # the game's board and their cord on the spectator view. None for both
+    # when not stated, and the names keep the panel's own colours.
+    colors: tuple[tuple[int, int, int], tuple[int, int, int]] | None = None
 
 
 def _pair(raw: str, sep: str = ":") -> tuple[int, int] | None:
@@ -143,6 +150,17 @@ def _pair(raw: str, sep: str = ":") -> tuple[int, int] | None:
         return int(left), int(right)
     except ValueError:
         return None
+
+
+_HEX = re.compile(r"^#([0-9a-fA-F]{6})$")
+
+
+def _color(raw: str) -> tuple[int, int, int] | None:
+    match = _HEX.match(raw.strip())
+    if match is None:
+        return None
+    value = int(match.group(1), 16)
+    return (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF
 
 
 def _side(raw: str) -> int | None:
@@ -232,6 +250,13 @@ def parse_score(text: str) -> Score | None:
 
     score.banner = fields.get("banner", "").upper()
     score.source = fields.get("source", "").upper()
+
+    # Both or neither: one name in a player's colour and the other in the
+    # panel's would look picked out.
+    color_a = _color(fields.get("color_a", ""))
+    color_b = _color(fields.get("color_b", ""))
+    if color_a is not None and color_b is not None:
+        score.colors = (color_a, color_b)
     return score
 
 
@@ -259,6 +284,9 @@ def format_score(score: Score) -> str:
         parts.append(f"banner={score.banner}")
     if score.source:
         parts.append(f"source={score.source}")
+    if score.colors is not None:
+        for key, (r, g, b) in zip(("color_a", "color_b"), score.colors, strict=True):
+            parts.append(f"{key}=#{r:02x}{g:02x}{b:02x}")
     return ";".join(parts)
 
 
@@ -365,23 +393,24 @@ def render(matrix, score: Score) -> None:
     _fill(matrix, COLON_X, Y_SCORE + 5, 3, 3, COLOR_LABEL)
     _fill(matrix, COLON_X, Y_SCORE + 12, 3, 3, COLOR_LABEL)
 
+    # With the players' colours each name is drawn in its player's, the one
+    # they have on the game's board and the spectator view, and the serve
+    # marker turns white so it stands apart from the name. Without them the
+    # server's name lights up orange with its marker, as it always has.
     serving_known = score.serving is not None and score.winner is None
-    draw_text(
-        matrix,
-        score.names[0],
-        5,
-        Y_NAMES,
-        COLOR_SERVE if serving_known and score.serving == 0 else COLOR_LABEL,
-    )
-    draw_text_right(
-        matrix,
-        score.names[1],
-        58,
-        Y_NAMES,
-        COLOR_SERVE if serving_known and score.serving == 1 else COLOR_LABEL,
-    )
+    if score.colors is not None:
+        name_colors = score.colors
+        marker = COLOR_MARKER
+    else:
+        name_colors = (
+            COLOR_SERVE if serving_known and score.serving == 0 else COLOR_LABEL,
+            COLOR_SERVE if serving_known and score.serving == 1 else COLOR_LABEL,
+        )
+        marker = COLOR_SERVE
+    draw_text(matrix, score.names[0], 5, Y_NAMES, name_colors[0])
+    draw_text_right(matrix, score.names[1], 58, Y_NAMES, name_colors[1])
     if serving_known:
-        _fill(matrix, 1 if score.serving == 0 else 60, Y_NAMES + 1, 3, 3, COLOR_SERVE)
+        _fill(matrix, 1 if score.serving == 0 else 60, Y_NAMES + 1, 3, 3, marker)
 
     if score.banner:
         color = COLOR_WON if score.winner is not None else COLOR_SERVE

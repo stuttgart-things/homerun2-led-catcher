@@ -98,9 +98,10 @@ displayRules:
   # rather than scroll past once. `hold` keeps it up until the next point
   # replaces it.
   #
-  # `score` draws the whole board — points, sets, player names, the server's
-  # name in orange. zaehlwerk sends the board in its tags (points=, serve=,
-  # player_a=, ...). An older zaehlwerk sends only the title: "7:5" then still
+  # `score` draws the whole board — points, sets, player names in the
+  # players' colours with a white serve marker (color_a=, color_b=), or the
+  # server's name in orange when no colours come. zaehlwerk sends the board in
+  # its tags (points=, serve=, player_a=, ...). An older zaehlwerk sends only the title: "7:5" then still
   # draws as a board with A and B for names, and "SET 1:0" falls back to plain
   # text, which is what the panel showed before.
   #
