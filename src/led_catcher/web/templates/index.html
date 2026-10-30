@@ -724,12 +724,13 @@
             won:   [34, 197, 94]
         };
         // As PANEL_COLORS in display/score.py: what a player's colour is
-        // mapped to on the panel, nearest by hue, a grey to the yellow.
+        // mapped to on the panel, nearest by hue, a grey to the yellow, and
+        // a second player on the first's a clear hue away.
         const PANEL_COLOURS = [
-            [0, 110, 255], [0, 200, 255], [0, 230, 160], [40, 220, 40], [255, 200, 0],
+            [40, 150, 255], [0, 200, 255], [0, 230, 160], [40, 220, 40], [255, 200, 0],
             [255, 100, 0], [255, 30, 50], [255, 0, 170], [150, 60, 255]
         ];
-        const GREY_COLOUR = 4, MIN_SATURATION = 0.25;
+        const GREY_COLOUR = 4, MIN_SATURATION = 0.25, MIN_HUE_APART = 0.25;
         const SEGMENTS = {
             '0':'abcdef', '1':'bc', '2':'abged', '3':'abgcd', '4':'fgbc',
             '5':'afgcd', '6':'afgecd', '7':'abc', '8':'abcdefg', '9':'abcdfg'
@@ -820,6 +821,11 @@
             return [hue / 6, sat];
         }
 
+        function hueDistance(a, b) {
+            const d = Math.abs(a - b);
+            return Math.min(d, 1 - d);
+        }
+
         // As _ranked(): the panel colours, nearest to c first.
         function rankedColours(c) {
             const hs = hueSat(c);
@@ -827,10 +833,7 @@
             if (hs[1] < MIN_SATURATION) {
                 return [GREY_COLOUR].concat(all.filter(function (i) { return i !== GREY_COLOUR; }));
             }
-            const distance = function (i) {
-                const d = Math.abs(hs[0] - hueSat(PANEL_COLOURS[i])[0]);
-                return Math.min(d, 1 - d);
-            };
+            const distance = function (i) { return hueDistance(hs[0], hueSat(PANEL_COLOURS[i])[0]); };
             return all.sort(function (x, y) { return distance(x) - distance(y) || x - y; });
         }
 
@@ -839,7 +842,13 @@
         function panelBoard(sc) {
             if (sc.colours) {
                 const first = rankedColours(sc.colours[0])[0];
-                const second = rankedColours(sc.colours[1]).filter(function (i) { return i !== first; })[0];
+                let second = rankedColours(sc.colours[1])[0];
+                if (second === first) {
+                    const apart = hueSat(PANEL_COLOURS[first])[0];
+                    second = rankedColours(sc.colours[1]).filter(function (i) {
+                        return hueDistance(hueSat(PANEL_COLOURS[i])[0], apart) >= MIN_HUE_APART;
+                    })[0];
+                }
                 sc = Object.assign({}, sc, {colours: [PANEL_COLOURS[first], PANEL_COLOURS[second]]});
             }
             if (!sc.ends || sc.ends[0] !== 1) return sc;

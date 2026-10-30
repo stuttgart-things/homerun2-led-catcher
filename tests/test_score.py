@@ -467,13 +467,34 @@ def test_a_grey_player_is_yellow_on_the_panel():
 
 
 def test_a_colour_keeps_its_hue_on_the_panel():
-    assert panel_colors((MOSS, LIGHT_BLUE)) == ((40, 220, 40), (0, 110, 255))
+    assert panel_colors((MOSS, LIGHT_BLUE)) == ((40, 220, 40), (40, 150, 255))
 
 
 def test_two_players_never_share_a_panel_colour():
     for a, b in [(LIGHT_BLUE, BLUE), (GREY, GREY), (MOSS, MOSS)]:
         on_panel = panel_colors((a, b))
         assert on_panel[0] != on_panel[1], (a, b)
+
+
+def test_two_players_on_one_colour_are_told_apart_by_hue():
+    """Cleo's light blue and Gero's blue were blue and cyan on the panel:
+    told apart only by brightness, which a few metres off is not at all."""
+    for a, b in [(LIGHT_BLUE, BLUE), (BLUE, LIGHT_BLUE), (GREY, GREY), (MOSS, MOSS), (PETROL, PETROL)]:
+        first, second = panel_colors((a, b))
+        assert score_mod._hue_distance(score_mod._hue(first), score_mod._hue(second)) >= score_mod._MIN_HUE_APART, (
+            a,
+            b,
+        )
+
+
+def test_a_keeps_the_nearest_colour_and_b_moves():
+    blue = score_mod.PANEL_COLORS[0]
+    assert panel_colors((LIGHT_BLUE, BLUE))[0] == blue
+    assert panel_colors((BLUE, LIGHT_BLUE))[0] == blue
+
+
+def test_two_players_on_different_colours_keep_them():
+    assert panel_colors((PETROL, MOSS)) == ((0, 230, 160), (40, 220, 40))
 
 
 def test_a_panel_colour_stays_itself():
@@ -490,7 +511,10 @@ def test_the_simulator_maps_onto_the_panels_colours():
     assert body is not None
     colours = tuple(tuple(int(c) for c in rgb.split(",")) for rgb in re.findall(r"\[([\d,\s]+)\]", body.group(1)))
     assert colours == score_mod.PANEL_COLORS
-    assert f"GREY_COLOUR = {score_mod._GREY_COLOR}, MIN_SATURATION = {score_mod._MIN_SATURATION}" in html
+    assert (
+        f"GREY_COLOUR = {score_mod._GREY_COLOR}, MIN_SATURATION = {score_mod._MIN_SATURATION}, "
+        f"MIN_HUE_APART = {score_mod._MIN_HUE_APART}"
+    ) in html
 
 
 # --------------------------------------------------------------------- ends
