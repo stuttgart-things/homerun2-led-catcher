@@ -70,10 +70,13 @@ MAX_PLAYED = 3
 # white — close to the unlit pixels and to the white serve marker. So each
 # player's colour is mapped to the nearest of these by hue, and a colour with
 # too little of one (a grey) to the yellow, which no figure's blade is. Two
-# players that land on the same one are told apart: the second gets the next
-# nearest. The simulator ships the same list.
+# players that land on the same one are told apart by hue, not brightness: the
+# second gets the nearest of the colours at least _MIN_HUE_APART from the
+# first's. Light blue and blue blades were blue and cyan, told apart only by
+# how bright they were. The blue is a light one: a deep blue is the dimmest
+# colour on the LEDs. The simulator ships the same list.
 PANEL_COLORS: tuple[tuple[int, int, int], ...] = (
-    (0, 110, 255),  # blue
+    (40, 150, 255),  # blue
     (0, 200, 255),  # cyan
     (0, 230, 160),  # teal
     (40, 220, 40),  # green
@@ -86,6 +89,9 @@ PANEL_COLORS: tuple[tuple[int, int, int], ...] = (
 _GREY_COLOR = 4
 # Below this HSV saturation a colour is a grey and has no hue worth matching.
 _MIN_SATURATION = 0.25
+# How far apart in hue two players' colours are when they had to be told
+# apart: a quarter of the wheel, so blue meets green or magenta, not cyan.
+_MIN_HUE_APART = 0.25
 
 _SEGMENTS = {
     "0": "abcdef",
@@ -362,22 +368,29 @@ def _ranked(color: tuple[int, int, int]) -> list[int]:
     hue, saturation, _ = colorsys.rgb_to_hsv(*(c / 255 for c in color))
     if saturation < _MIN_SATURATION:
         return [_GREY_COLOR, *(i for i in range(len(PANEL_COLORS)) if i != _GREY_COLOR)]
+    return sorted(range(len(PANEL_COLORS)), key=lambda i: _hue_distance(hue, _hue(PANEL_COLORS[i])))
 
-    def distance(i: int) -> float:
-        other = colorsys.rgb_to_hsv(*(c / 255 for c in PANEL_COLORS[i]))[0]
-        d = abs(hue - other)
-        return min(d, 1 - d)
 
-    return sorted(range(len(PANEL_COLORS)), key=distance)
+def _hue(color: tuple[int, int, int]) -> float:
+    return colorsys.rgb_to_hsv(*(c / 255 for c in color))[0]
+
+
+def _hue_distance(a: float, b: float) -> float:
+    d = abs(a - b)
+    return min(d, 1 - d)
 
 
 def panel_colors(
     colors: tuple[tuple[int, int, int], tuple[int, int, int]],
 ) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
     """Map the players' colours onto PANEL_COLORS, a's first, and never both
-    onto the same one."""
+    onto the same one: b's nearest is taken unless it is a's, and then the
+    nearest of those a clear hue away from a's."""
     first = _ranked(colors[0])[0]
-    second = next(i for i in _ranked(colors[1]) if i != first)
+    second = _ranked(colors[1])[0]
+    if second == first:
+        apart = _hue(PANEL_COLORS[first])
+        second = next(i for i in _ranked(colors[1]) if _hue_distance(_hue(PANEL_COLORS[i]), apart) >= _MIN_HUE_APART)
     return PANEL_COLORS[first], PANEL_COLORS[second]
 
 
