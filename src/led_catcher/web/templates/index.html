@@ -718,6 +718,7 @@
             score: [255, 214, 160],
             label: [116, 122, 190],
             serve: [249, 115, 22],
+            marker: [255, 255, 255],
             faint: [70, 78, 110],
             won:   [34, 197, 94]
         };
@@ -731,6 +732,13 @@
             if (k === 'a' || k === '0') return 0;
             if (k === 'b' || k === '1') return 1;
             return null;
+        }
+
+        function scoreColour(raw) {
+            const m = /^#([0-9a-fA-F]{6})$/.exec((raw || '').trim());
+            if (!m) return null;
+            const v = parseInt(m[1], 16);
+            return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
         }
 
         function scorePair(raw, sep) {
@@ -753,6 +761,7 @@
             if (!points) return null;
 
             const setNo = parseInt(f.set, 10);
+            const colourA = scoreColour(f.color_a), colourB = scoreColour(f.color_b);
             const played = [];
             (f.played || '').split(',').forEach(function (c) {
                 if (!c.trim()) return;
@@ -769,7 +778,8 @@
                 names: [(f.a || 'A').toUpperCase().slice(0, 6), (f.b || 'B').toUpperCase().slice(0, 6)],
                 played: played,
                 banner: (f.banner || '').toUpperCase(),
-                source: (f.source || '').toUpperCase()
+                source: (f.source || '').toUpperCase(),
+                colours: (colourA && colourB) ? [colourA, colourB] : null
             };
         }
 
@@ -844,13 +854,21 @@
             fillBox(SC.colonX, SC.yScore + 5, 3, 3, SC_COL.label);
             fillBox(SC.colonX, SC.yScore + 12, 3, 3, SC_COL.label);
 
+            // As render(): the names in the players' colours with a white
+            // marker, or the server's name in orange without them.
             const servingKnown = sc.serving !== null && sc.winner === null;
-            const n0 = (servingKnown && sc.serving === 0) ? SC_COL.serve : SC_COL.label;
-            const n1 = (servingKnown && sc.serving === 1) ? SC_COL.serve : SC_COL.label;
+            let n0, n1, marker;
+            if (sc.colours) {
+                n0 = sc.colours[0]; n1 = sc.colours[1]; marker = SC_COL.marker;
+            } else {
+                n0 = (servingKnown && sc.serving === 0) ? SC_COL.serve : SC_COL.label;
+                n1 = (servingKnown && sc.serving === 1) ? SC_COL.serve : SC_COL.label;
+                marker = SC_COL.serve;
+            }
             drawTextLine(sc.names[0], SC.yNames, n0[0], n0[1], n0[2], 5);
             drawRight(sc.names[1], 58, SC.yNames, n1);
             if (servingKnown) {
-                fillBox(sc.serving === 0 ? 1 : 60, SC.yNames + 1, 3, 3, SC_COL.serve);
+                fillBox(sc.serving === 0 ? 1 : 60, SC.yNames + 1, 3, 3, marker);
             }
 
             if (sc.banner) {

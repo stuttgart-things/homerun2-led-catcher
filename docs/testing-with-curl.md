@@ -128,8 +128,10 @@ panel '{"kind":"score","text":"points=11:9;sets=2:0;set=2;winner=a;banner=Match;
 ```
 
 Keys: `points`, `sets`, `set`, `serve` (`a`/`b`), `winner`, `a`, `b` (names,
-6 characters max), `played` (e.g. `11-7,9-11`), `banner`, `source`. A text
-without `points` falls back to plain static text.
+6 characters max), `played` (e.g. `11-7,9-11`), `banner`, `source`,
+`color_a` and `color_b` (each player's colour as `#rrggbb`, both or neither:
+the names are drawn in them and the serve marker turns white). A text without
+`points` falls back to plain static text.
 
 ## 4. Replace, hold and blank
 
