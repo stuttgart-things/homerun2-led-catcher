@@ -132,7 +132,8 @@ Keys: `points`, `sets`, `set`, `serve` (`a`/`b`), `winner`, `a`, `b` (names,
 `color_a` and `color_b` (each player's colour as `#rrggbb`, both or neither:
 the names are drawn in them and the serve marker turns white), `best_of` and
 `to` (with `best_of=1` the header shows `BIS <to>` instead of the set number
-and the sets won). A text without
+and the sets won), `last` (`a`/`b`, who took the point: `+1 <name>` under the
+score until the next board, unless a `banner` takes the row). A text without
 `points` falls back to plain static text.
 
 ## 4. Replace, hold and blank

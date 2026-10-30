@@ -119,6 +119,7 @@ _GLYPHS: dict[str, tuple[str, ...]] = {
     ".": ("0", "0", "0", "0", "1"),
     ":": ("0", "1", "0", "1", "0"),
     "-": ("000", "000", "111", "000", "000"),
+    "+": ("000", "010", "111", "010", "000"),
     "?": ("111", "001", "010", "000", "010"),
 }
 
@@ -142,6 +143,9 @@ class Score:
     # the game's board and their cord on the spectator view. None for both
     # when not stated, and the names keep the panel's own colours.
     colors: tuple[tuple[int, int, int], tuple[int, int, int]] | None = None
+    # Who took the point this board follows, for whoever looked away during
+    # the rally; None when it followed no point, or a point taken back.
+    last: int | None = None
     # How long the match is, as zaehlwerk sends it; None when not stated.
     best_of: int | None = None
     to: int | None = None
@@ -252,6 +256,11 @@ def parse_score(text: str) -> Score | None:
             score.played.append(played)
 
     score.banner = fields.get("banner", "").upper()
+    # zaehlwerk says it as the transition and its side, the payload as last=.
+    if "last" in fields:
+        score.last = _side(fields["last"])
+    elif fields.get("transition") == "point" and "side" in fields:
+        score.last = _side(fields["side"])
     score.source = fields.get("source", "").upper()
 
     # Both or neither: one name in a player's colour and the other in the
@@ -293,6 +302,8 @@ def format_score(score: Score) -> str:
         parts.append("played=" + ",".join(f"{a}-{b}" for a, b in score.played))
     if score.banner:
         parts.append(f"banner={score.banner}")
+    if score.last is not None:
+        parts.append(f"last={'ab'[score.last]}")
     if score.source:
         parts.append(f"source={score.source}")
     if score.colors is not None:
@@ -437,6 +448,12 @@ def render(matrix, score: Score) -> None:
     if score.banner:
         color = COLOR_WON if score.winner is not None else COLOR_SERVE
         draw_text_centered(matrix, score.banner, Y_BANNER, color)
+    elif score.last is not None:
+        # Under the score, until the next one: who took the point, in their
+        # colour, for whoever did not see the rally. A banner says more and
+        # takes the row when there is one.
+        color = score.colors[score.last] if score.colors is not None else COLOR_LABEL
+        draw_text_centered(matrix, f"+1 {score.names[score.last]}", Y_BANNER, color)
 
     if score.played:
         recent = " ".join(f"{a}-{b}" for a, b in score.played[-MAX_PLAYED:])

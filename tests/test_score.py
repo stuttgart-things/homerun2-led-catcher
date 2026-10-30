@@ -341,6 +341,47 @@ def test_without_colours_the_server_is_orange_as_before():
     assert m.pixels[(2, score_mod.Y_NAMES + 2)] == score_mod.COLOR_SERVE
 
 
+# ---------------------------------------------------------------- last point
+
+
+def test_zaehlwerks_point_says_who_took_it():
+    s = parse_score("match=m1,set=1,transition=point,side=b,points=3:3,player_a=Cleo,player_b=Emil")
+    assert s is not None
+    assert s.last == 1
+    assert "last=b" in format_score(s)
+
+
+@pytest.mark.parametrize("transition", ["undo", "set_won", "serve_decided"])
+def test_only_a_point_says_who_took_it(transition):
+    s = parse_score(f"match=m1,set=1,transition={transition},side=a,points=3:3")
+    assert s is not None
+    assert s.last is None
+
+
+def _banner_row(m: FakeMatrix) -> dict[tuple[int, int], tuple[int, int, int]]:
+    rows = range(score_mod.Y_BANNER, score_mod.Y_BANNER + 5)
+    return {xy: c for xy, c in m.pixels.items() if xy[1] in rows}
+
+
+def test_the_point_is_shown_under_the_score_in_the_players_colour():
+    green = (0x4D, 0x7C, 0x4A)
+    m = FakeMatrix()
+    render(m, Score(points=(3, 3), names=("CLEO", "EMIL"), last=1, colors=((0x3A, 0xA6, 0xFF), green)))
+    expected = FakeMatrix()
+    score_mod.draw_text_centered(expected, "+1 EMIL", score_mod.Y_BANNER, green)
+    assert _banner_row(m) == expected.pixels
+    assert (score_mod.WIDTH // 2 - score_mod.text_width("+1 EMIL") // 2 + 1, score_mod.Y_BANNER + 2) in m.pixels, (
+        "the plus is drawn, not skipped as an unknown glyph"
+    )
+
+
+def test_a_banner_takes_the_row_from_the_point():
+    with_point, without = FakeMatrix(), FakeMatrix()
+    render(with_point, Score(points=(0, 0), names=("CLEO", "EMIL"), last=1, banner="SATZ EMIL"))
+    render(without, Score(points=(0, 0), names=("CLEO", "EMIL"), banner="SATZ EMIL"))
+    assert with_point.pixels == without.pixels
+
+
 # ------------------------------------------------------------- match length
 
 
