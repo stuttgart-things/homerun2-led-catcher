@@ -17,6 +17,7 @@ from led_catcher.display.score import (
     display_score,
     format_score,
     number_width,
+    panel_colors,
     parse_score,
     render,
     text_width,
@@ -327,8 +328,9 @@ def test_the_names_take_the_players_colours_and_the_marker_turns_white():
     m = FakeMatrix()
     blue, green = (0x3A, 0xA6, 0xFF), (0x4D, 0x7C, 0x4A)
     render(m, Score(points=(3, 2), serving=0, names=("CLEO", "EMIL"), colors=(blue, green)))
-    assert _name_pixels(m, left=True) == {blue}
-    assert _name_pixels(m, left=False) == {green}
+    on_panel = panel_colors((blue, green))
+    assert _name_pixels(m, left=True) == {on_panel[0]}
+    assert _name_pixels(m, left=False) == {on_panel[1]}
     assert m.pixels[(2, score_mod.Y_NAMES + 2)] == score_mod.COLOR_MARKER
     assert score_mod.COLOR_SERVE not in m.pixels.values(), "orange is the server without colours only"
 
@@ -368,7 +370,7 @@ def test_the_point_is_shown_under_the_score_in_the_players_colour():
     m = FakeMatrix()
     render(m, Score(points=(3, 3), names=("CLEO", "EMIL"), last=1, colors=((0x3A, 0xA6, 0xFF), green)))
     expected = FakeMatrix()
-    score_mod.draw_text_centered(expected, "+1 EMIL", score_mod.Y_BANNER, green)
+    score_mod.draw_text_centered(expected, "+1 EMIL", score_mod.Y_BANNER, score_mod.PANEL_COLORS[3])
     assert _banner_row(m) == expected.pixels
     assert (score_mod.WIDTH // 2 - score_mod.text_width("+1 EMIL") // 2 + 1, score_mod.Y_BANNER + 2) in m.pixels, (
         "the plus is drawn, not skipped as an unknown glyph"
@@ -444,3 +446,106 @@ def test_the_simulator_draws_the_panels_glyphs():
 def test_letters_that_read_alike_from_afar_differ_in_their_outline(char, other):
     glyphs = score_mod._GLYPHS
     assert glyphs[char][0] != glyphs[other][0] or glyphs[char][-1] != glyphs[other][-1]
+
+
+# ------------------------------------------------------------- panel colours
+
+
+def _hex(raw: str) -> tuple[int, int, int]:
+    value = int(raw.lstrip("#"), 16)
+    return (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF
+
+
+GREY, PETROL, MOSS = _hex("#8c8f9c"), _hex("#159c8c"), _hex("#4d7c4a")
+LIGHT_BLUE, BLUE = _hex("#3aa6ff"), _hex("#2f6fd0")
+
+
+def test_a_grey_player_is_yellow_on_the_panel():
+    """Ada's grey blade was dimmed white on the LEDs, next to the unlit pixels
+    and the white serve marker."""
+    assert panel_colors((GREY, PETROL))[0] == score_mod.PANEL_COLORS[score_mod._GREY_COLOR] == (255, 200, 0)
+
+
+def test_a_colour_keeps_its_hue_on_the_panel():
+    assert panel_colors((MOSS, LIGHT_BLUE)) == ((40, 220, 40), (0, 110, 255))
+
+
+def test_two_players_never_share_a_panel_colour():
+    for a, b in [(LIGHT_BLUE, BLUE), (GREY, GREY), (MOSS, MOSS)]:
+        on_panel = panel_colors((a, b))
+        assert on_panel[0] != on_panel[1], (a, b)
+
+
+def test_a_panel_colour_stays_itself():
+    for color in score_mod.PANEL_COLORS:
+        assert score_mod._ranked(color)[0] == score_mod.PANEL_COLORS.index(color)
+
+
+def test_the_simulator_maps_onto_the_panels_colours():
+    import re
+    from pathlib import Path
+
+    html = (Path(__file__).parent.parent / "src" / "led_catcher" / "web" / "templates" / "index.html").read_text()
+    body = re.search(r"const PANEL_COLOURS = \[(.*?)\];", html, re.S)
+    assert body is not None
+    colours = tuple(tuple(int(c) for c in rgb.split(",")) for rgb in re.findall(r"\[([\d,\s]+)\]", body.group(1)))
+    assert colours == score_mod.PANEL_COLORS
+    assert f"GREY_COLOUR = {score_mod._GREY_COLOR}, MIN_SATURATION = {score_mod._MIN_SATURATION}" in html
+
+
+# --------------------------------------------------------------------- ends
+
+
+def test_parse_the_ends_from_zaehlwerks_tags():
+    s = parse_score("match=m1,set=1,points=3:7,player_a=Ada,player_b=Emil,ends=b:a")
+    assert s is not None
+    assert s.ends == (1, 0)
+    assert "ends=b:a" in format_score(s)
+
+
+@pytest.mark.parametrize("raw", ["a:a", "b", "left:right", ""])
+def test_ends_that_do_not_say_who_stands_where_are_left_out(raw):
+    s = parse_score(f"points=1:1;ends={raw}")
+    assert s is not None
+    assert s.ends is None
+
+
+def test_the_player_at_the_left_end_is_drawn_on_the_left():
+    """Pong had Emil left with 7 and the panel Ada left with 3: the board was
+    drawn as a against b, and read as left against right."""
+    ada, emil = _hex("#8c8f9c"), _hex("#159c8c")
+    turned = Score(
+        points=(3, 7),
+        sets=(1, 0),
+        set_number=2,
+        serving=1,
+        names=("ADA", "EMIL"),
+        played=[(11, 9)],
+        colors=(ada, emil),
+        last=0,
+        ends=(1, 0),
+    )
+    as_seen = Score(
+        points=(7, 3),
+        sets=(0, 1),
+        set_number=2,
+        serving=0,
+        names=("EMIL", "ADA"),
+        played=[(9, 11)],
+        colors=(ada, emil),
+        last=1,
+    )
+    m, expected = FakeMatrix(), FakeMatrix()
+    render(m, turned)
+    # Colours are mapped a first before turning, so the expected board maps
+    # them the same way and turns them by hand.
+    on_panel = panel_colors((ada, emil))
+    render(expected, Score(**{**as_seen.__dict__, "colors": (on_panel[1], on_panel[0])}))
+    assert m.pixels == expected.pixels
+
+
+def test_a_at_the_left_end_is_drawn_as_before():
+    with_ends, without = FakeMatrix(), FakeMatrix()
+    render(with_ends, Score(points=(3, 7), serving=1, names=("ADA", "EMIL"), ends=(0, 1)))
+    render(without, Score(points=(3, 7), serving=1, names=("ADA", "EMIL")))
+    assert with_ends.pixels == without.pixels
