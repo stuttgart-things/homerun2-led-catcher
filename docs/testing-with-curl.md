@@ -135,8 +135,8 @@ yellow and never both in the same one, and the serve marker turns white),
 `ends` (`b:a` when b stands at the left end of the table: everything is then
 drawn mirrored, so the panel reads left against right like the table),
 `best_of` and
-`to` (with `best_of=1` the header shows `BIS <to>` instead of the set number
-and the sets won), `last` (`a`/`b`, who took the point: `+1 <name>` under the
+`to` (with `best_of=1` the header shows a red dot and `LIVE` instead of the set number
+and the sets won; every running match gets the red dot), `last` (`a`/`b`, who took the point: `+1 <name>` under the
 score until the next board, unless a `banner` takes the row). A text without
 `points` falls back to plain static text.
 

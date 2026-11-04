@@ -710,16 +710,18 @@
         // renders in Python and this renders in the browser; if you change one,
         // change the other, or the simulator quietly stops telling the truth.
         const SC = {
-            yHeader: 1, yDivider: 7, yScore: 10, yNames: 33,
-            yBanner: 43, yPlayed: 51, ySource: 58,
-            dw: 11, dh: 20, dt: 3, gap: 2,
-            leftEdge: 27, rightStart: 36, colonX: 30, maxPlayed: 3
+            yHeader: 1, yDivider: 7, yScore: 10, yNames: 37,
+            yBanner: 45, yPlayed: 52, ySource: 58,
+            dw: 12, dh: 24, dt: 3, gap: 2,
+            leftEdge: 27, rightStart: 36, colonX: 30, colonDy: [6, 15],
+            xHeaderText: 6, maxPlayed: 3
         };
         const SC_COL = {
             score: [255, 214, 160],
             label: [116, 122, 190],
             serve: [249, 115, 22],
             marker: [255, 255, 255],
+            live:  [255, 30, 50],
             faint: [70, 78, 110],
             won:   [34, 197, 94]
         };
@@ -918,15 +920,18 @@
         function drawScore(sc) {
             clearMatrix();
             sc = panelBoard(sc);
-            // As render(): a match of one set says what it is played to.
+            // As render(): a red dot while the match is played, and LIVE for a
+            // match of one set.
+            const live = sc.winner === null;
+            if (live) fillBox(1, SC.yHeader + 1, 3, 3, SC_COL.live);
             if (sc.bestOf === 1) {
-                if (sc.to !== null) {
-                    drawTextLine('BIS ' + sc.to, SC.yHeader,
-                                 SC_COL.label[0], SC_COL.label[1], SC_COL.label[2], 1);
+                if (live) {
+                    drawTextLine('LIVE', SC.yHeader,
+                                 SC_COL.score[0], SC_COL.score[1], SC_COL.score[2], SC.xHeaderText);
                 }
             } else {
                 drawTextLine('SATZ ' + sc.setNumber, SC.yHeader,
-                             SC_COL.label[0], SC_COL.label[1], SC_COL.label[2], 1);
+                             SC_COL.label[0], SC_COL.label[1], SC_COL.label[2], SC.xHeaderText);
                 drawRight(sc.sets[0] + ':' + sc.sets[1], 62, SC.yHeader, SC_COL.label);
             }
             fillBox(1, SC.yDivider, 62, 1, SC_COL.faint);
@@ -938,8 +943,7 @@
             }
             drawNumber(sc.points[0], SC.leftEdge - numberWidth(sc.points[0]) + 1, SC.yScore, leftCol);
             drawNumber(sc.points[1], SC.rightStart, SC.yScore, rightCol);
-            fillBox(SC.colonX, SC.yScore + 5, 3, 3, SC_COL.label);
-            fillBox(SC.colonX, SC.yScore + 12, 3, 3, SC_COL.label);
+            SC.colonDy.forEach(function (dy) { fillBox(SC.colonX, SC.yScore + dy, 3, 3, SC_COL.label); });
 
             // As render(): the names in the players' colours with a white
             // marker, or the server's name in orange without them.
