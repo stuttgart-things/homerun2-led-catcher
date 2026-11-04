@@ -173,7 +173,9 @@ async def _run_consumer(consumer: RedisConsumer, stop: asyncio.Event | None = No
     Returns True for a requested shutdown, False when the consumer task ended
     without one: Redis not ready within REDIS_STARTUP_TIMEOUT, or any crash.
     The caller exits non-zero in that case, so Kubernetes restarts the pod
-    visibly instead of it running on with nothing consuming (#65).
+    visibly instead of it running on with nothing consuming (#65). ``stop`` is
+    set then as well: it is what ends the simulator's open event streams, and
+    without it the server waited for every browser tab to go away (#158).
     """
     if stop is None:
         stop = asyncio.Event()
@@ -185,6 +187,7 @@ async def _run_consumer(consumer: RedisConsumer, stop: asyncio.Event | None = No
 
     if not stop.is_set():
         stop_task.cancel()
+        stop.set()
         consumer.mark_failed()
         exc = consumer_task.exception() if not consumer_task.cancelled() else None
         logger.error("consumer stopped unexpectedly, exiting", extra={"error": repr(exc)})
@@ -237,6 +240,7 @@ async def _run_standalone(server_task: asyncio.Task, worker_alive, stop: asyncio
 
     if stop.is_set():
         return True
+    stop.set()  # ends the open event streams, as in _run_consumer (#158)
     if server_task in done:
         exc = server_task.exception() if not server_task.cancelled() else None
         logger.error("web server stopped unexpectedly, exiting", extra={"error": repr(exc)})

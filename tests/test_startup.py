@@ -39,7 +39,11 @@ def test_startup_timeout_default_when_unset():
     assert parse_redis_startup_timeout("   ") == DEFAULT_REDIS_STARTUP_TIMEOUT
 
 
-@pytest.mark.parametrize("raw", ["0s", "0", "-10s", "soon", "120"])
+def test_startup_timeout_zero_means_no_limit():
+    assert parse_redis_startup_timeout("0") == 0.0
+
+
+@pytest.mark.parametrize("raw", ["0s", "-10s", "soon", "120"])
 def test_startup_timeout_rejects_invalid(raw):
     with pytest.raises(ValueError, match="REDIS_STARTUP_TIMEOUT"):
         parse_redis_startup_timeout(raw)
@@ -97,6 +101,22 @@ async def test_wait_ready_gives_up_after_the_budget(fast_backoff):
     assert calls >= 2
 
 
+async def test_wait_ready_without_a_limit_keeps_retrying(fast_backoff):
+    # Far more attempts than a 0.1 s budget allows: 0 must mean no limit, not none (#158).
+    consumer = _consumer()
+    calls = 0
+
+    async def attempt():
+        nonlocal calls
+        calls += 1
+        if calls < 20:
+            raise ConnectionError("connection refused")
+
+    consumer._startup_attempt = attempt
+    await asyncio.wait_for(consumer.wait_ready(timeout=0), timeout=5.0)
+    assert calls == 20
+
+
 async def test_wait_ready_ends_promptly_when_cancelled():
     consumer = _consumer()
 
@@ -139,8 +159,11 @@ async def test_run_consumer_reports_a_consumer_that_gave_up(fast_backoff):
         raise ConnectionError("connection refused")
 
     consumer._startup_attempt = attempt
-    assert await _run_consumer(consumer, stop=asyncio.Event()) is False
+    stop = asyncio.Event()
+    assert await _run_consumer(consumer, stop=stop) is False
     assert consumer.state == "failed"
+    # Ends the simulator's event streams, or the server waits for every open tab (#158).
+    assert stop.is_set()
 
 
 async def test_run_consumer_clean_shutdown_while_waiting():

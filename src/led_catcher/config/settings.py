@@ -289,13 +289,17 @@ def parse_duration(value: str) -> float:
 
 
 def parse_redis_startup_timeout(raw: str) -> float:
-    """``REDIS_STARTUP_TIMEOUT`` in seconds; unset means the default.
+    """``REDIS_STARTUP_TIMEOUT`` in seconds; unset means the default, ``0`` no limit.
 
-    An unparsable, zero or negative value raises instead of falling back: a typo
+    No limit is for the Pi, where Redis runs on another machine that can come
+    back long after the panel does, and an exit only costs a 502 (#158).
+    An unparsable or negative value raises instead of falling back: a typo
     should fail startup, not quietly restore a budget nobody chose.
     """
     if not raw.strip():
         return DEFAULT_REDIS_STARTUP_TIMEOUT
+    if raw.strip() == "0":
+        return 0.0
     try:
         seconds = parse_duration(raw)
     except ValueError as exc:

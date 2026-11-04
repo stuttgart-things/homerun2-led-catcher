@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from datetime import datetime
 from typing import Callable
@@ -222,7 +223,8 @@ class RedisConsumer:
         """Retry connecting and creating the consumer groups until Redis answers.
 
         Exponential backoff (1s, 2s, 4s, 8s, capped at 16s), each attempt bounded
-        by ``STARTUP_ATTEMPT_TIMEOUT_SECONDS``, for at most ``timeout`` seconds.
+        by ``STARTUP_ATTEMPT_TIMEOUT_SECONDS``, for at most ``timeout`` seconds,
+        or for as long as it takes when ``timeout`` is 0 (#158).
         These calls used to run once, outside the read loop's error handling, so a
         Redis that was not up yet ended the consumer task while the process and
         ``/healthz`` stayed green and nothing was ever consumed (#65).
@@ -230,7 +232,7 @@ class RedisConsumer:
         Raises :class:`RedisNotReadyError` when the budget runs out. A cancellation
         (shutdown signal) ends the wait immediately.
         """
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + timeout if timeout > 0 else math.inf
         backoff = STARTUP_BACKOFF_INITIAL_SECONDS
         attempt = 0
         while True:
