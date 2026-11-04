@@ -403,10 +403,28 @@ def test_parse_the_length_from_zaehlwerks_tags():
     assert (s.best_of, s.to) == (1, 11)
 
 
-def test_a_match_of_one_set_says_what_it_is_played_to():
+def test_a_match_of_one_set_is_live():
     m = FakeMatrix()
     render(m, Score(points=(3, 2), best_of=1, to=11))
-    assert _header(m) == set(x for x, _ in _drawn("BIS 11").pixels)
+    live = _drawn("LIVE", score_mod.X_HEADER_TEXT)
+    assert _header(m) == {1, 2, 3} | set(x for x, _ in live.pixels), "the dot, then LIVE; no BIS 11"
+    assert m.pixels[(2, score_mod.Y_HEADER + 2)] == score_mod.COLOR_LIVE
+
+
+def test_a_won_match_is_no_longer_live():
+    m = FakeMatrix()
+    render(m, Score(points=(11, 7), best_of=1, to=11, winner=0))
+    assert _header(m) == set()
+
+
+def test_the_digits_fit_the_panel_and_clear_the_names():
+    # Two digits each side, the widest board there is.
+    m = FakeMatrix()
+    render(m, Score(points=(88, 88), names=("CLEO", "EMIL")))
+    digits = [(x, y) for (x, y) in m.pixels if score_mod.Y_SCORE <= y < score_mod.Y_SCORE + DIGIT_H]
+    assert min(x for x, _ in digits) >= 0 and max(x for x, _ in digits) < score_mod.WIDTH
+    assert score_mod.Y_SCORE + DIGIT_H < score_mod.Y_NAMES, "a row between the points and the names"
+    assert score_mod.Y_NAMES + 5 < score_mod.Y_BANNER < score_mod.Y_PLAYED - 5 < score_mod.Y_SOURCE - 5
 
 
 def test_a_longer_match_counts_its_sets_as_before():
@@ -573,3 +591,29 @@ def test_a_at_the_left_end_is_drawn_as_before():
     render(with_ends, Score(points=(3, 7), serving=1, names=("ADA", "EMIL"), ends=(0, 1)))
     render(without, Score(points=(3, 7), serving=1, names=("ADA", "EMIL")))
     assert with_ends.pixels == without.pixels
+
+
+def test_the_simulator_draws_the_same_layout():
+    import re
+    from pathlib import Path
+
+    html = (Path(__file__).parent.parent / "src" / "led_catcher" / "web" / "templates" / "index.html").read_text()
+    body = re.search(r"const SC = \{(.*?)\};", html, re.S)
+    assert body is not None
+    sc = dict(re.findall(r"(\w+): (\[[^\]]*\]|\d+)", body.group(1)))
+    expected = {
+        "yHeader": score_mod.Y_HEADER,
+        "yScore": score_mod.Y_SCORE,
+        "yNames": score_mod.Y_NAMES,
+        "yBanner": score_mod.Y_BANNER,
+        "yPlayed": score_mod.Y_PLAYED,
+        "ySource": score_mod.Y_SOURCE,
+        "dw": DIGIT_W,
+        "dh": DIGIT_H,
+        "leftEdge": score_mod.LEFT_EDGE,
+        "rightStart": score_mod.RIGHT_START,
+        "colonX": score_mod.COLON_X,
+        "xHeaderText": score_mod.X_HEADER_TEXT,
+    }
+    assert {k: int(sc[k]) for k in expected} == expected
+    assert sc["colonDy"] == "[" + ", ".join(str(d) for d in score_mod.COLON_DY) + "]"

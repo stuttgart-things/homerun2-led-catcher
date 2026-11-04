@@ -3,7 +3,7 @@
 The other modes render one line of BDF text, which is the right shape for a
 notification and the wrong one for a score: a score is read from across the
 room, mid-rally, by someone who was not looking for it. So the points get their
-own geometry — seven-segment digits at 11x20 — and everything around them stays
+own geometry — seven-segment digits at 12x24 — and everything around them stays
 in the 3x5 glyphs the simulator already uses, so the panel does not grow a
 second typographic language.
 
@@ -41,26 +41,36 @@ COLOR_WON = (34, 197, 94)
 # The serve marker once the names carry the players' colours: neutral, so it
 # does not run into the name it stands before.
 COLOR_MARKER = (255, 255, 255)
+# The dot before LIVE, as a broadcast marks a live picture. Only while the match
+# is being played: a won match is no longer live.
+COLOR_LIVE = (255, 30, 50)
 
 # Row allocation. Kept as constants because the simulator draws the same layout
 # and the two drifting apart is the failure that is hardest to notice.
 Y_HEADER = 1
 Y_DIVIDER = 7
 Y_SCORE = 10
-Y_NAMES = 33
-Y_BANNER = 43
-Y_PLAYED = 51
+Y_NAMES = 37
+Y_BANNER = 45
+Y_PLAYED = 52
 Y_SOURCE = 58
 
-# Seven-segment geometry: 11 wide, 20 tall, 3px stroke.
-DIGIT_W = 11
-DIGIT_H = 20
+# Seven-segment geometry: 12 wide, 24 tall, 3px stroke. The points are what is
+# read from across the room, so they take the rows: 11x20 left a gap under the
+# names nothing used in a one-set match.
+DIGIT_W = 12
+DIGIT_H = 24
 DIGIT_T = 3
 DIGIT_GAP = 2
 # x of the last column of the left number, and the first column of the right.
+# Two digits are 26 wide: the left number starts at x 2, the right ends at 61.
 LEFT_EDGE = 27
 RIGHT_START = 36
 COLON_X = 30
+# The colon's two dots, from the top of the digits: centred on the digits' middle.
+COLON_DY = (6, 15)
+# Where the header's text starts, after the live dot.
+X_HEADER_TEXT = 6
 
 MAX_NAME = 6
 MAX_PLAYED = 3
@@ -513,14 +523,18 @@ def render(matrix, score: Score) -> None:
     if score.colors is not None:
         score = replace(score, colors=panel_colors(score.colors))
     score = from_the_left(score)
-    # A match of one set has no set number and no sets won worth a corner:
-    # it says what the set is played to instead. Without the length stated,
-    # the header is what it always was.
+    # A red dot while the match is played, as a broadcast marks a live picture.
+    # A match of one set has no set number and no sets won worth a corner, and
+    # what it is played to ("BIS 11") told nobody anything: it says LIVE. Without
+    # the length stated, the header counts the sets as it always did.
+    live = score.winner is None
+    if live:
+        _fill(matrix, 1, Y_HEADER + 1, 3, 3, COLOR_LIVE)
     if score.best_of == 1:
-        if score.to is not None:
-            draw_text(matrix, f"BIS {score.to}", 1, Y_HEADER, COLOR_LABEL)
+        if live:
+            draw_text(matrix, "LIVE", X_HEADER_TEXT, Y_HEADER, COLOR_SCORE)
     else:
-        draw_text(matrix, f"SATZ {score.set_number}", 1, Y_HEADER, COLOR_LABEL)
+        draw_text(matrix, f"SATZ {score.set_number}", X_HEADER_TEXT, Y_HEADER, COLOR_LABEL)
         draw_text_right(matrix, f"{score.sets[0]}:{score.sets[1]}", 62, Y_HEADER, COLOR_LABEL)
     _fill(matrix, 1, Y_DIVIDER, 62, 1, COLOR_FAINT)
 
@@ -533,8 +547,8 @@ def render(matrix, score: Score) -> None:
 
     draw_number(matrix, score.points[0], LEFT_EDGE - number_width(score.points[0]) + 1, Y_SCORE, left_color)
     draw_number(matrix, score.points[1], RIGHT_START, Y_SCORE, right_color)
-    _fill(matrix, COLON_X, Y_SCORE + 5, 3, 3, COLOR_LABEL)
-    _fill(matrix, COLON_X, Y_SCORE + 12, 3, 3, COLOR_LABEL)
+    for dy in COLON_DY:
+        _fill(matrix, COLON_X, Y_SCORE + dy, 3, 3, COLOR_LABEL)
 
     # With the players' colours each name is drawn in its player's, the one
     # they have on the game's board and the spectator view, and the serve
