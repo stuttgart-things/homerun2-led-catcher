@@ -33,11 +33,13 @@ async def test_a_dead_display_worker_ends_the_process(monkeypatch, caplog):
     monkeypatch.setattr(entry, "WATCHDOG_INTERVAL", 0.01)
     server = asyncio.create_task(_forever())
     alive = {"value": True}
-    runner = asyncio.create_task(_run_standalone(server, worker_alive=lambda: alive["value"], stop=asyncio.Event()))
+    stop = asyncio.Event()
+    runner = asyncio.create_task(_run_standalone(server, worker_alive=lambda: alive["value"], stop=stop))
     await asyncio.sleep(0.03)
     alive["value"] = False
     assert await asyncio.wait_for(runner, timeout=1.0) is False
     assert "display worker stopped unexpectedly" in caplog.text
+    assert stop.is_set()  # ends the open event streams (#158)
     server.cancel()
 
 
