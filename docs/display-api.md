@@ -79,6 +79,7 @@ fields (`systems` and `severity` are rejected).
 | `color` | `[255,255,255]` | An RGB triple, or a colour name from the profile (`error`, `warning`, `success`, `info`, `debug`, or your own) |
 | `duration` | `5` | Seconds, above 0 and at most 600 |
 | `hold` | `false` | Stay up until something replaces it. Only the still modes (`static`, `image`, `score`) honour it |
+| `ambient` | `false` | Programme, not news: shown only on a free panel (idle screen, playlist, dark), dropped when busy, cut short by any other display, never held ([ambient displays](profile-reference.md#ambient-displays-programme-between-notifications)) |
 
 Replacement follows the same rules as a message: a new display replaces a held
 one straight away, and waits for a finite one to finish.

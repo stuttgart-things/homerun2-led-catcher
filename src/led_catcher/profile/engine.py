@@ -64,6 +64,10 @@ class DisplayConfig:
     # leaves the score on the panel rather than the clock (#148).
     overlay: bool = False
     then: DisplayConfig | None = None
+    # ambient: programme content, not news (#161) -- shown only while the
+    # panel would show the idle screen or playlist, dropped when it is busy,
+    # cut short by any other display. Never held.
+    ambient: bool = False
     color: tuple[int, int, int] = (255, 255, 255)
     systems: list[str] = field(default_factory=list)
     severity: list[str] = field(default_factory=list)
@@ -160,9 +164,12 @@ def load_profile(path: str | Path, rules_expected: bool = True) -> Profile:
             image=rule_data.get("image", ""),
             font=rule_data.get("font", "6x10.bdf"),
             duration=float(rule_data.get("duration", 5)),
-            hold=bool(rule_data.get("hold", False)),
+            # An ambient display is never held: it would sit on the panel's free
+            # moments for good.
+            hold=bool(rule_data.get("hold", False)) and not bool(rule_data.get("ambient", False)),
             strip_prefix=bool(rule_data.get("strip_prefix", False)),
             overlay=bool(rule_data.get("overlay", False)),
+            ambient=bool(rule_data.get("ambient", False)),
             systems=rule_data.get("systems", []),
             severity=severity_list,
             tags=[str(t) for t in rule_data.get("tags", [])],
@@ -284,6 +291,7 @@ def _resolve_config(config: DisplayConfig, msg: Message, profile: Profile) -> Di
         hold=config.hold,
         strip_prefix=config.strip_prefix,
         overlay=config.overlay,
+        ambient=config.ambient,
         systems=config.systems,
         severity=config.severity,
         tags=config.tags,

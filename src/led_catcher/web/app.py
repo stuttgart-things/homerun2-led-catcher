@@ -223,6 +223,7 @@ def _event_json(e: LedEvent) -> dict:
         "color": e.color_hex(),
         "duration": e.duration,
         "hold": e.hold,
+        "ambient": e.ambient,
         "text": e.text,
         "font": e.font,
         "image": e.image,

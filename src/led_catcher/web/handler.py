@@ -69,6 +69,7 @@ def build_event(profile: Profile, msg: Message, config: DisplayConfig | None) ->
     kind = "text"
     duration = 5.0
     hold = False
+    ambient = False
     text = font = image = ""
     card = None
     if config is not None:
@@ -76,6 +77,7 @@ def build_event(profile: Profile, msg: Message, config: DisplayConfig | None) ->
         kind = config.kind
         duration = config.duration
         hold = config.hold
+        ambient = config.ambient
         text, font, image = config.text, config.font, config.image
         if kind.lower() == "card":
             card = _card_json(config)
@@ -98,6 +100,7 @@ def build_event(profile: Profile, msg: Message, config: DisplayConfig | None) ->
         color=color,
         duration=duration,
         hold=hold,
+        ambient=ambient,
         text=text,
         font=font or "6x10.bdf",
         image=image,

@@ -354,6 +354,12 @@ components:
           title: Hold
           description: Stay up until something replaces it. Honoured by static, image and score.
           default: false
+        ambient:
+          type: boolean
+          title: Ambient
+          description: 'Programme, not news (#161): shown only while the panel would show the idle screen
+            or playlist, dropped when it is busy, cut short by any other display. Never held.'
+          default: false
       additionalProperties: false
       type: object
       title: DisplayRequest
