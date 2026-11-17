@@ -73,7 +73,7 @@ def test_the_canvas_worker_is_a_queue(name):
     assert "let pending = [];" in template
     assert "enqueue(pending, ev, DISPLAY_QUEUE);" in template
     assert "pending = ev;" not in template, "the single slot is back"
-    assert "const ev = pending.shift();" in template
+    assert "let ev = pending.shift();" in template
 
 
 def test_both_pages_queue_with_the_same_rules():
@@ -84,3 +84,38 @@ def test_both_pages_queue_with_the_same_rules():
         return match.group(0)
 
     assert enqueue("index.html") == enqueue("wall.html")
+
+
+# ---- AMBIENT_AFTER_HOLD (#166) ----
+
+
+def _ambient_after_hold(page: str) -> str:
+    match = re.search(r"const AMBIENT_AFTER_HOLD = Math\.max\(0, parseFloat\('([^']*)'\) \|\| 0\);", page)
+    assert match, "the page does not read AMBIENT_AFTER_HOLD"
+    return match.group(1)
+
+
+@pytest.mark.parametrize("path", PAGES)
+async def test_the_page_defaults_to_sixty_seconds(path):
+    page = await _get(create_web_app(EventTracker()), path)
+    assert _ambient_after_hold(page) == "60"
+
+
+@pytest.mark.parametrize("path", PAGES)
+async def test_web_mode_hands_ambient_after_hold_to_the_canvas(path):
+    cfg = Config(redis=RedisConfig(), ambient_after_hold=0)
+    page = await _get(_build_app(cfg, "web", EventTracker(), None, Profile()), path)
+    assert _ambient_after_hold(page) == "0"
+
+
+def test_both_pages_submit_with_the_same_rules():
+    def submit(name: str) -> str:
+        template = (TEMPLATES / name).read_text()
+        match = re.search(
+            r"            // DisplayWorker._submit_ambient.*?enqueue\(pending, ev, DISPLAY_QUEUE\);", template, re.S
+        )
+        assert match, f"{name} has no ambient submit"
+        return match.group(0)
+
+    assert submit("index.html") == submit("wall.html")
+    assert "resume = { ev: current.ev, since: current.since };" in submit("index.html")

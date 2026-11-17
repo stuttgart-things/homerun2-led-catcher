@@ -103,6 +103,9 @@ class Config:
     idle_color_mode: str = "fixed"  # fixed, daylight, random (#162)
     idle_interval: int = 300  # seconds a rotate/random slot lasts (#162)
     display_queue: int = 1  # displays that may wait for the panel; 1 = newest wins (#142)
+    # seconds a held display (the table tennis score) stays unchanged before
+    # ambient programme may play over it; 0 = never (#166)
+    ambient_after_hold: int = 60
     redis_startup_timeout: float = DEFAULT_REDIS_STARTUP_TIMEOUT
     log_format: str = "json"
     log_level: str = "info"
@@ -375,6 +378,7 @@ def load_config() -> Config:
             "LED_IDLE_INTERVAL", styles.DEFAULT_INTERVAL, minimum=styles.MIN_INTERVAL, maximum=styles.MAX_INTERVAL
         ),
         display_queue=_env_int("DISPLAY_QUEUE", 1, minimum=1),
+        ambient_after_hold=_env_int("AMBIENT_AFTER_HOLD", 60, minimum=0),
         redis_startup_timeout=parse_redis_startup_timeout(_getenv("REDIS_STARTUP_TIMEOUT", "")),
         log_format=_getenv("LOG_FORMAT", "json"),
         log_level=_getenv("LOG_LEVEL", "info"),

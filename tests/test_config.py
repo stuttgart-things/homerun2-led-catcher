@@ -140,6 +140,24 @@ def test_display_queue_from_the_environment(monkeypatch):
     assert load_config().display_queue == 3
 
 
+def test_ambient_after_hold_defaults_to_a_minute(monkeypatch):
+    monkeypatch.delenv("AMBIENT_AFTER_HOLD", raising=False)
+    assert load_config().ambient_after_hold == 60
+
+
+@pytest.mark.parametrize(("raw", "seconds"), [("0", 0), ("90", 90)])
+def test_ambient_after_hold_from_the_environment(monkeypatch, raw, seconds):
+    monkeypatch.setenv("AMBIENT_AFTER_HOLD", raw)
+    assert load_config().ambient_after_hold == seconds
+
+
+@pytest.mark.parametrize("raw", ["-1", "soon"])
+def test_a_bad_ambient_after_hold_fails_startup(monkeypatch, raw):
+    monkeypatch.setenv("AMBIENT_AFTER_HOLD", raw)
+    with pytest.raises(ValueError, match="AMBIENT_AFTER_HOLD"):
+        load_config()
+
+
 @pytest.mark.parametrize("raw", ["0", "-1", "many"])
 def test_a_bad_display_queue_fails_startup(monkeypatch, raw):
     monkeypatch.setenv("DISPLAY_QUEUE", raw)

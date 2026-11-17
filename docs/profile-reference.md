@@ -306,9 +306,17 @@ screen or a playlist:
 
 - On a free panel (dark, idle screen, playlist) it is shown, and the clock or
   playlist comes back after it.
-- While anything else is on the panel or waiting, a held score included, it is
-  **dropped, not queued**: a stale programme item is worth nothing. The log
-  says `display dropped before reaching the panel (busy)`.
+- While anything else is on the panel or waiting, it is **dropped, not
+  queued**: a stale programme item is worth nothing. The log says
+  `display dropped before reaching the panel (busy)`.
+- A held display (the table tennis score) counts as busy only while it is
+  fresh: once it has not changed for `AMBIENT_AFTER_HOLD` seconds (default
+  60, `0` = always busy), programme plays over it, and the held display comes
+  back afterwards with its age, so the next item of the same slot can follow
+  (#166). The log says `ambient display plays over a held one unchanged for
+  …s`. The next point -- or any other display -- cuts the programme short at
+  once. Without this, a table tennis demo that plays almost without a pause
+  keeps the programme off the panel for good.
 - Any other display pre-empts it at once: one on the panel is cut short,
   waiting ones are removed (`pre-empted`). Notifications never wait for programme.
 - Among ambient displays the newest wins (`replaced`).

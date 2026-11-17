@@ -156,6 +156,7 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `LED_IDLE_STYLE` | `classic` | Face of the idle clock: `classic`, `big`, `binary`, `words`, `analog`, or `rotate` through all of them ([faces](docs/display-api.md#faces-styles-and-colour-modes)) |
 | `LED_IDLE_COLOR_MODE` | `fixed` | `fixed` (`LED_IDLE_COLOR`), `daylight` (follows the time of day), `random` (new colour every interval) |
 | `LED_IDLE_INTERVAL` | `300` | Seconds per slot of `rotate` and `random`, 30–86400. Every instance with the same settings shows the same face at the same time |
+| `AMBIENT_AFTER_HOLD` | `60` | Seconds a held display stays unchanged before ambient programme may play over it (and it comes back after); `0` = never (#166). The canvases get it rendered into the page |
 | `DISPLAY_QUEUE` | `1` | Displays that may wait for the panel: `1` = single slot, newest wins; more = FIFO, oldest dropped when full. A pending held display is superseded by anything newer. The simulator canvas and `/wall` queue the same way (rendered into the page) |
 
 ## Testing

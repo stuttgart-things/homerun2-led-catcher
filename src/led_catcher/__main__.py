@@ -62,7 +62,11 @@ def _build_handlers(cfg: Config, mode: str, profile: Profile) -> tuple[list, Eve
     tracker = None
 
     if mode in ("led", "full"):
-        handlers.append(create_led_handler(profile, panel=cfg.panel, queue=cfg.display_queue))
+        handlers.append(
+            create_led_handler(
+                profile, panel=cfg.panel, queue=cfg.display_queue, ambient_after_hold=cfg.ambient_after_hold
+            )
+        )
         logger.info("LED handler active")
 
     if mode in ("web", "full"):
@@ -110,7 +114,11 @@ def _build_app(
     """Build the combined FastAPI app: health, /display, /streams and the optional simulator."""
     # The worker exists already in every mode that drives the panel; `web`
     # has none, and its /display writes reach only the simulator.
-    worker = get_worker(panel=cfg.panel, queue=cfg.display_queue) if mode in ("led", "full", "standalone") else None
+    worker = (
+        get_worker(panel=cfg.panel, queue=cfg.display_queue, ambient_after_hold=cfg.ambient_after_hold)
+        if mode in ("led", "full", "standalone")
+        else None
+    )
     if tracker is not None:
         # A click in the timeline shows an event again, on the panel too where
         # there is one (#128). standalone has no caught messages to replay.
@@ -131,6 +139,7 @@ def _build_app(
             base_path=cfg.base_path,
             # The canvas queues like the worker, at the same length (#144).
             display_queue=cfg.display_queue,
+            ambient_after_hold=cfg.ambient_after_hold,
         )
         app.get("/healthz")(health_app.routes[0].endpoint)
         app.get("/health")(health_app.routes[1].endpoint)
@@ -295,7 +304,7 @@ async def _run(cfg: Config) -> int:
         # only thing that puts anything on the panel (#80). The simulator
         # tracker is filled by that API, so the canvas shows the panel.
         tracker = EventTracker()
-        worker = get_worker(panel=cfg.panel, queue=cfg.display_queue)
+        worker = get_worker(panel=cfg.panel, queue=cfg.display_queue, ambient_after_hold=cfg.ambient_after_hold)
         set_consumer_state(None)
         set_display_state(lambda: worker.alive)
         logger.info("standalone mode: no Redis — the panel is driven by the /display API")
