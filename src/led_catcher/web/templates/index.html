@@ -1172,6 +1172,11 @@
                     await sleep(token, Math.max(0, left) * 1000);
                     continue;
                 }
+                const face = parseClockItem(p.current.image, panel.idle && panel.idle.utcOffset);
+                if (face) {
+                    await clockFor(token, face, performance.now() + left * 1000);
+                    continue;
+                }
                 await showGif({ kind: 'gif', image: p.current.image, text: '', font: '6x10.bdf',
                                 color: '#ffffff', duration: left, hold: false }, token);
             }
@@ -1362,13 +1367,26 @@
         }
 
         async function idleClock(token) {
-            const idle = idleScreen;
+            return clockFor(token, idleScreen, Infinity);
+        }
+
+        // A playlist's clock item (#162): clock:<style>:<colorMode>:<r>,<g>,<b>,
+        // as display/clock_styles.py clock_item writes it. null for an image.
+        function parseClockItem(item, utcOffset) {
+            const m = /^clock:(\w+):(\w+):(\d+),(\d+),(\d+)$/.exec(item || '');
+            if (!m) return null;
+            return { mode: 'clock', style: m[1], colorMode: m[2], color: [+m[3], +m[4], +m[5]],
+                     interval: 300, utcOffset: utcOffset || 0 };
+        }
+
+        // The face of `idle` until performance.now() reaches endAt.
+        async function clockFor(token, idle, endAt) {
             // ':' and '.' are measured like the panel measures them, though set as pixels.
             const tf = await guard(token, loadText(CLOCK.timeFont, '0123456789 :'));
             const df = await guard(token, loadText(CLOCK.dateFont, '0123456789 .' + WEEKDAYS.join('')));
-            for (;;) {
+            while (performance.now() < endAt) {
                 const face = await idleFace(token, idle);
-                const end = performance.now() + Math.max(0.5, face.validFor) * 1000 + 50;
+                const end = Math.min(endAt, performance.now() + Math.max(0.5, face.validFor) * 1000 + 50);
                 if (face.style !== 'classic') {
                     drawFrame(face.frames[0]);
                     await sleep(token, end - performance.now());
@@ -1393,6 +1411,7 @@
                     await sleep(token, Math.min(1000 - (now % 1000) + 5, end - performance.now()));
                 }
             }
+            clearMatrix();
         }
 
         async function showScore(ev, token) {
@@ -1640,15 +1659,21 @@
             $('pc-pl-start').addEventListener('click', function () {
                 const images = Array.from($('pc-pl-images').selectedOptions).map(o => o.value)
                     .concat($('pc-pl-urls').value.split('\n').map(u => u.trim()).filter(Boolean));
-                if (!images.length) { setStatus('pick at least one image or enter a URL', 'error'); return; }
+                // Clock faces (#162), in the Idle screen rows' colour mode and colour.
+                const items = Array.from($('pc-pl-clocks').selectedOptions).map(o => ({
+                    kind: 'clock', style: o.value, colorMode: $('pc-idle-colormode').value,
+                    color: hexToRgb($('pc-idle-color').value)
+                }));
+                if (!images.length && !items.length) { setStatus('pick at least one image or clock, or enter a URL', 'error'); return; }
                 const body = {
                     images: images,
+                    items: items,
                     order: $('pc-pl-order').value,
                     duration: Number($('pc-pl-duration').value) || 10
                 };
                 const total = Number($('pc-pl-total').value);
                 if (total > 0) body.total = total * 60;
-                send('PUT', body, BASE_PATH + '/display/playlist', 'playlist started: ' + images.length + ' image(s)');
+                send('PUT', body, BASE_PATH + '/display/playlist', 'playlist started: ' + (images.length + items.length) + ' item(s)');
             });
             $('pc-pl-stop').addEventListener('click', function () {
                 send('DELETE', null, BASE_PATH + '/display/playlist', 'playlist stopped');

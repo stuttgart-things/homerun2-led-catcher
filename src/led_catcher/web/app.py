@@ -350,6 +350,14 @@ CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocompl
     <select id="pc-pl-images" multiple size="6" title="Ctrl/Cmd-click for several"></select>
     <label for="pc-pl-urls">URLs</label>
     <textarea id="pc-pl-urls" rows="2" placeholder="https://… one per line, after the images"></textarea>
+    <label for="pc-pl-clocks">Clocks</label>
+    <select id="pc-pl-clocks" multiple size="5" title="Ctrl/Cmd-click for several; colours from the Idle screen rows">
+        <option value="classic">classic</option>
+        <option value="big">big</option>
+        <option value="binary">binary</option>
+        <option value="words">words</option>
+        <option value="analog">analog</option>
+    </select>
     <label for="pc-pl-order">Order</label>
     <div class="row-inline">
         <select id="pc-pl-order">

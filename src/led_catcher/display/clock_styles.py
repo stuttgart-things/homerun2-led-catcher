@@ -109,6 +109,33 @@ def resolve(idle, now: float) -> Face:
     return Face(style=style, color=color, until=until)  # type: ignore[arg-type]
 
 
+# A clock in a playlist (#162) travels as a string among the image names, so
+# the schedule, the shuffle and GET /display handle it like any image:
+# "clock:<style>:<colour mode>:<r>,<g>,<b>". ':' never occurs in an image's
+# bare file name, and URLs start with https.
+CLOCK_ITEM_PREFIX = "clock:"
+
+
+def clock_item(style: str, color_mode: str, color) -> str:
+    return f"{CLOCK_ITEM_PREFIX}{style}:{color_mode}:{','.join(str(int(c)) for c in color)}"
+
+
+def parse_clock_item(item: str):
+    """The IdleScreen a playlist's clock item shows, or None for an image."""
+    from led_catcher.display.clock import IdleScreen
+
+    if not item.startswith(CLOCK_ITEM_PREFIX):
+        return None
+    try:
+        style, color_mode, rgb = item[len(CLOCK_ITEM_PREFIX) :].split(":")
+        color = tuple(int(c) for c in rgb.split(","))
+    except ValueError:
+        return None
+    if style not in IDLE_STYLES or color_mode not in COLOR_MODES or len(color) != 3:
+        return None
+    return IdleScreen(style=style, color_mode=color_mode, color=color)
+
+
 def dim(color, factor: float) -> tuple[int, int, int]:
     return tuple(int(c * factor) for c in color)  # type: ignore[return-value]
 

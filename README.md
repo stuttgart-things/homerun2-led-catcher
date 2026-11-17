@@ -137,6 +137,7 @@ curl -X PUT http://localhost:8080/display/playlist -H 'Authorization: Bearer dev
 curl -X DELETE http://localhost:8080/display/playlist -H 'Authorization: Bearer dev'
 ```
 
+Playlists also take clock faces as `items`, e.g. `{"kind":"clock","style":"words"}` between the GIFs.
 A playlist plays whenever nothing else is on the panel, in place of the idle clock:
 messages interrupt it and it plays on afterwards ([details](docs/display-api.md#playlist-several-images-one-after-another)).
 

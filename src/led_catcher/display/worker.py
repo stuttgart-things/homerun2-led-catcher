@@ -456,10 +456,19 @@ class DisplayWorker:
         Each item gets what is left of its slot (display.playlist): after a
         message took part of it, the rest; when a slot is over, the next.
         """
+        from led_catcher.display.clock import draw_idle
+        from led_catcher.display.clock_styles import parse_clock_item
         from led_catcher.display.modes import display_event
         from led_catcher.profile.engine import DisplayConfig
 
         playlist = self.playlist
+
+        def play_clock(face, end: float) -> None:
+            # A clock item (#162): the idle screen's face for the slot,
+            # redrawn when it changes, until the slot ends.
+            while (t := self._now()) < end:
+                redraw = draw_idle(self._display, face, t)
+                wait(max(0.0, min(redraw, end) - self._now()))
 
         def wait(seconds: float, hold: bool = False, frame: bool = False) -> bool:
             # The playlist's own wait: ends the item at once on a submission,
@@ -491,9 +500,14 @@ class DisplayWorker:
                     if left < MIN_PLAYLIST_ITEM_SECONDS:
                         wait(max(0.0, left))
                         continue
-                    config = DisplayConfig(kind="gif", image=slot.image, duration=left)
+                    face = parse_clock_item(slot.image)
                     try:
-                        display_event(self._display, config, wait=wait)
+                        if face is not None:
+                            play_clock(face, slot.end)
+                        else:
+                            display_event(
+                                self._display, DisplayConfig(kind="gif", image=slot.image, duration=left), wait=wait
+                            )
                     except _Interrupted:
                         raise
                     except Exception:
