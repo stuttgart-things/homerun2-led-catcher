@@ -49,7 +49,7 @@ def test_write_errors_are_documented():
 
 def test_rule_matching_fields_are_not_part_of_the_request():
     props = spec()["components"]["schemas"]["DisplayRequest"]["properties"]
-    assert set(props) == {"kind", "text", "image", "font", "color", "duration", "hold"}
+    assert set(props) == {"kind", "text", "image", "font", "color", "duration", "hold", "ambient"}
 
 
 # ---- catalog-info.yaml points at it ------------------------------------------------

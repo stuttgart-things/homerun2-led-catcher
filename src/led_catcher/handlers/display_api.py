@@ -113,6 +113,11 @@ class DisplayRequest(BaseModel):
         default=False,
         description="Stay up until something replaces it. Honoured by static, image and score.",
     )
+    ambient: bool = Field(
+        default=False,
+        description="Programme, not news (#161): shown only while the panel would show the idle screen or "
+        "playlist, dropped when it is busy, cut short by any other display. Never held.",
+    )
 
     @field_validator("color")
     @classmethod
@@ -600,6 +605,7 @@ def describe_config(config: DisplayConfig) -> dict:
         "color": list(config.color),
         "duration": config.duration,
         "hold": config.hold,
+        "ambient": config.ambient,
     }
 
 
@@ -625,7 +631,8 @@ def _to_config(body: DisplayRequest, palette: dict[str, tuple[int, int, int]], m
         image=body.image,
         font=body.font,
         duration=body.duration,
-        hold=body.hold,
+        hold=body.hold and not body.ambient,
+        ambient=body.ambient,
         color=tuple(rgb),
     )
 
@@ -658,6 +665,7 @@ def _record(tracker: EventTracker, config: DisplayConfig) -> None:
             color=config.color,
             duration=config.duration,
             hold=config.hold,
+            ambient=config.ambient,
             text=config.text,
             font=config.font,
             image=config.image,

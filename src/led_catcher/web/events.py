@@ -28,6 +28,9 @@ class LedEvent:
     # hardware (#62).
     duration: float = 5.0
     hold: bool = False
+    # Programme, not news (#161): the canvas drops it on a busy panel and cuts
+    # it short for anything else, as DisplayWorker does.
+    ambient: bool = False
     # What the panel draws, so the canvas can draw the same (#83): the rule's
     # rendered text (not the message title), and the font and image it names.
     text: str = ""

@@ -20,6 +20,7 @@ displayRules:
     hold: <true|false>                     # keep it up until replaced
     strip_prefix: <true|false>             # card: drop "[SEVERITY] system" from the title
     overlay: <true|false>                  # afterwards, show the message as the next rule draws it
+    ambient: <true|false>                  # programme, not news: only on a free panel, see "Ambient displays"
 
 quietHours:                              # optional, see "Quiet hours"
   from: "19:00"
@@ -295,6 +296,37 @@ newer message, so a scoreboard only ever shows its newest score. See
 Displaying happens on that worker, never on the consumer's event loop, so a
 message on the panel never stops the catcher reading its streams or answering
 `/healthz`.
+
+### Ambient displays: programme between notifications
+
+`ambient: true` marks a rule's displays as programme rather than news, e.g. the
+segments of a radio-pitcher (tech news, infra facts) on a stream of their own
+(#161). They take only the moments the panel would otherwise give the idle
+screen or a playlist:
+
+- On a free panel (dark, idle screen, playlist) it is shown, and the clock or
+  playlist comes back after it.
+- While anything else is on the panel or waiting, a held score included, it is
+  **dropped, not queued**: a stale programme item is worth nothing. The log
+  says `display dropped before reaching the panel (busy)`.
+- Any other display pre-empts it at once: one on the panel is cut short,
+  waiting ones are removed (`pre-empted`). Notifications never wait for programme.
+- Among ambient displays the newest wins (`replaced`).
+- It is never held; `hold` on an ambient rule is ignored.
+
+```yaml
+displayRules:
+  radio:
+    systems: [radio]
+    severity: [INFO]
+    kind: card
+    strip_prefix: true
+    duration: 12
+    ambient: true
+```
+
+Put it above the wildcard rules: first match wins. The simulator and `/wall`
+apply the same rules.
 
 ## Rule Matching
 

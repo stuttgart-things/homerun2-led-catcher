@@ -396,6 +396,20 @@
                 if (!pumping) pump();
                 return;
             }
+            // DisplayWorker._submit_ambient (#161): programme only on a panel
+            // that would show the idle screen or playlist; newest ambient wins.
+            if (ev.ambient) {
+                const busy = (current && !current.idle && !current.ambient) || pending.some(p => !p.ambient);
+                if (busy) return;
+                pending = [ev];
+                if (current) cancel(current.token);
+                if (!pumping) pump();
+                return;
+            }
+            // News pre-empts programme: nothing ambient waits ahead of it, one
+            // on the panel ends now.
+            pending = pending.filter(p => !p.ambient);
+            if (current && current.ambient) cancel(current.token);
             enqueue(pending, ev, DISPLAY_QUEUE);
             if (current && (current.held || current.idle)) cancel(current.token);
             if (!pumping) pump();
@@ -461,7 +475,7 @@
                 const layer = ev ? null : playlist ? 'playlist' : idleScreen !== null ? 'idle' : null;
                 if (!ev && !layer) break;
                 const token = { cancelled: false, wake: null };
-                current = { token: token, held: false, idle: layer !== null };
+                current = { token: token, held: false, idle: layer !== null, ambient: !!(ev && ev.ambient) };
                 try {
                     await (layer === 'playlist' ? playPlaylist(token) : layer ? idleClock(token) : play(ev, token));
                     // An overlay gives way to what it played over, the held

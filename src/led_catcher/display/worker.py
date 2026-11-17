@@ -41,6 +41,14 @@ A playlist (#146, display.playlist) takes the idle screen's place while it
 runs: the same "nothing else to show" moments, the same interruption by any
 submission, and it plays again once the queue is empty. Starting one ends a
 held display, as a submission would. blank() stops it.
+
+An *ambient* display (#161) is programme, not news: the radio-pitcher's
+segments between notifications. It only ever takes the idle screen's moments.
+Submitted while anything else is on the panel or waiting -- a held score
+included -- it is dropped, not queued: a stale programme item is worth
+nothing. It never waits in front of a real display: one submitted later
+removes waiting ambient ones and cuts a running one short at once, as blank()
+would. Among ambient displays the newest wins. It is never held.
 """
 
 from __future__ import annotations
@@ -75,7 +83,16 @@ _BLANK = object()
 
 def _is_held(config) -> bool:
     """True for a display that stays up until something replaces it."""
-    return bool(getattr(config, "hold", False)) and str(getattr(config, "kind", "")) in HOLDING_KINDS
+    return (
+        bool(getattr(config, "hold", False))
+        and str(getattr(config, "kind", "")) in HOLDING_KINDS
+        and not _is_ambient(config)
+    )
+
+
+def _is_ambient(config) -> bool:
+    """True for programme content that only fills the idle screen's moments (#161)."""
+    return bool(getattr(config, "ambient", False))
 
 
 @dataclass(frozen=True)
@@ -102,6 +119,11 @@ class Showing:
     def held(self) -> bool:
         """True when the display stays up until something replaces it."""
         return _is_held(self.config)
+
+    @property
+    def ambient(self) -> bool:
+        """True for programme content, which any real display pre-empts (#161)."""
+        return _is_ambient(self.config)
 
 
 class DisplayWorker:
@@ -153,7 +175,21 @@ class DisplayWorker:
         the lock, appends to a short deque and returns. ``system`` and
         ``title`` only name the display in the log if it is dropped.
         """
+        if _is_ambient(config):
+            if getattr(config, "hold", False):
+                # Never held, whoever built it: it would keep the panel's free
+                # moments for good.
+                config = replace(config, hold=False)
+            self._submit_ambient(_Entry(config, system, title))
+            return
         with self._lock:
+            # Programme gives way to news (#161): nothing ambient waits in
+            # front of this, and one on the panel ends now.
+            for entry in [e for e in self._pending if _is_ambient(e.config)]:
+                self._pending.remove(entry)
+                self._drop(entry, "pre-empted")
+            if self._showing is not None and self._showing.ambient:
+                self._cut.set()
             # A pending held display gives way to anything newer, exactly as
             # one on the panel would — so it is only ever last in the queue.
             if self._pending and _is_held(self._pending[-1].config):
@@ -164,6 +200,24 @@ class DisplayWorker:
             # Set under the lock, paired with the clear in _take, so a message
             # submitted between taking the queue's last entry and clearing the
             # event cannot be lost.
+            self._wake.set()
+
+    def _submit_ambient(self, entry: _Entry) -> None:
+        """An ambient display: shown only on a panel that would show the idle
+        screen or the playlist, else dropped (#161)."""
+        with self._lock:
+            showing = self._showing
+            busy = (showing is not None and not showing.ambient) or any(
+                not _is_ambient(e.config) for e in self._pending
+            )
+            if busy:
+                self._drop(entry, "busy")
+                return
+            # The newest programme item wins, waiting or on the panel.
+            self._clear_pending("replaced")
+            if showing is not None:
+                self._cut.set()
+            self._pending.append(entry)
             self._wake.set()
 
     def blank(self) -> None:
