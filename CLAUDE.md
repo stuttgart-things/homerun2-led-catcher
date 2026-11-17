@@ -106,7 +106,8 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 - `src/led_catcher/display/offscreen.py` — a matrix that draws into a PIL image; `hack/render_card.py` renders a card to PNG
 - `src/led_catcher/display/playlist.py` — playlists (`PUT /display/playlist`): a wall-clock schedule of slots, shuffled per round with a shared seed; the worker plays it in place of the idle screen, the canvas and `/wall` read the current slot from `GET /display`
 - `src/led_catcher/display/remote.py` — images from `https://` URLs: bounded download, Pillow check, cached under a bare `url-<hash>` name that `_resolve_image` finds after `visual_aid/`
-- `src/led_catcher/display/clock.py` — the idle screen: clock texts, layout, drawing; the canvas mirrors it
+- `src/led_catcher/display/clock.py` — the idle screen: clock texts, layout, drawing; the canvas mirrors it (classic only)
+- `src/led_catcher/display/clock_styles.py` — the other idle faces (big, binary, words, analog), `rotate` and the colour modes; drawn only here, the canvases fetch the frame from `/api/preview/clock`
 - `src/led_catcher/tools/publish.py` — `led-catcher-publish` test message producer
 - `dagger/main.go` — Dagger CI module (delegates to stuttgart-things/dagger/python)
 - `.github/workflows/build-test.yaml` — GitHub Actions CI workflow
@@ -152,6 +153,9 @@ Redis Stream ──► RedisConsumer ──┬──► log_handler (structured 
 | `LED_PWM_BITS` | *(library default)* | PWM bits, 1–11. Lower trades colour depth for refresh rate |
 | `LED_IDLE` | `off` | Idle screen: `clock` shows the time whenever nothing else is on the panel, `off` leaves it dark. Switchable at runtime with `PUT /display/idle` |
 | `LED_IDLE_COLOR` | `info` | Colour of the idle clock: a profile colour name or `r,g,b` |
+| `LED_IDLE_STYLE` | `classic` | Face of the idle clock: `classic`, `big`, `binary`, `words`, `analog`, or `rotate` through all of them ([faces](docs/display-api.md#faces-styles-and-colour-modes)) |
+| `LED_IDLE_COLOR_MODE` | `fixed` | `fixed` (`LED_IDLE_COLOR`), `daylight` (follows the time of day), `random` (new colour every interval) |
+| `LED_IDLE_INTERVAL` | `300` | Seconds per slot of `rotate` and `random`, 30–86400. Every instance with the same settings shows the same face at the same time |
 | `DISPLAY_QUEUE` | `1` | Displays that may wait for the panel: `1` = single slot, newest wins; more = FIFO, oldest dropped when full. A pending held display is superseded by anything newer. The simulator canvas and `/wall` queue the same way (rendered into the page) |
 
 ## Testing

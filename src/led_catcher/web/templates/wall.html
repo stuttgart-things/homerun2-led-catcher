@@ -676,29 +676,60 @@
             ];
         }
 
+        // The face for now (#162): display/clock_styles.py picks style and
+        // colour and draws every face but classic at 64x64; scaled up here
+        // like the scoreboard.
+        async function idleFace(token, idle) {
+            const q = new URLSearchParams({
+                style: idle.style || 'classic', colorMode: idle.colorMode || 'fixed',
+                color: idle.color.join(','), interval: idle.interval || 300
+            });
+            try {
+                const res = await guard(token, fetch(BASE_PATH + '/api/preview/clock?' + q));
+                if (!res.ok) throw new Error('clock: HTTP ' + res.status);
+                const face = await guard(token, res.json());
+                if (face.frames) face.frames = face.frames.map(b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
+                return face;
+            } catch (e) {
+                if (e instanceof Cancelled) throw e;
+                return { style: 'classic', color: idle.color, validFor: 60 };
+            }
+        }
+
         async function idleClock(token) {
             const idle = idleScreen;
             const [tf, df] = await guard(token, Promise.all([
                 loadText('10x20.bdf', '0123456789 :'),
                 loadText('6x10.bdf', '0123456789 .' + WEEKDAYS.join(''))
             ]));
-            const dim = idle.color.map(c => Math.floor(c * CLOCK_DIM));
             const ts = Math.max(1, Math.min(Math.floor(H * 0.5 / tf.height), Math.floor(W * 0.9 / textWidth(tf, '00:00'))));
             const sample = 'Wednesday  00.00.0000';
             const ds = Math.max(1, Math.min(Math.ceil(ts / 2), Math.floor(W * 0.9 / textWidth(df, sample))));
             const gap = 2 * ts;
             const top = Math.floor((H - (tf.height * ts + gap + df.height * ds)) / 2);
-            let drawn = null;
             for (;;) {
-                const now = Date.now();
-                const [time, date] = clockTexts(now, idle.utcOffset);
-                if (time + date !== drawn) {
-                    clear();
-                    drawText(tf, Math.floor((W - textWidth(tf, time) * ts) / 2), top, idle.color, time, ts);
-                    drawText(df, Math.floor((W - textWidth(df, date) * ds) / 2), top + tf.height * ts + gap, dim, date, ds);
-                    drawn = time + date;
+                const face = await idleFace(token, idle);
+                const end = performance.now() + Math.max(0.5, face.validFor) * 1000 + 50;
+                if (face.style !== 'classic') {
+                    drawFrame(face.frames[0], PANEL, PANEL, K,
+                              Math.floor((W - PANEL * K) / 2), Math.floor((H - PANEL * K) / 2));
+                    await sleep(token, end - performance.now());
+                    continue;
                 }
-                await sleep(token, 1000 - (now % 1000) + 5);
+                const color = face.color;
+                const dim = color.map(c => Math.floor(c * CLOCK_DIM));
+                let drawn = null;
+                while (performance.now() < end) {
+                    const now = Date.now();
+                    const [time, date] = clockTexts(now, idle.utcOffset);
+                    if (time + date !== drawn) {
+                        clear();
+                        drawText(tf, Math.floor((W - textWidth(tf, time) * ts) / 2), top, color, time, ts);
+                        drawText(df, Math.floor((W - textWidth(df, date) * ds) / 2), top + tf.height * ts + gap, dim, date, ds);
+                        drawn = time + date;
+                    }
+                    await sleep(token, Math.min(1000 - (now % 1000) + 5, end - performance.now()));
+                }
             }
         }
 

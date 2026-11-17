@@ -208,6 +208,9 @@ All configuration is via environment variables:
 | `LED_PWM_BITS` | *(library default)* | PWM bits, 1–11. Lower trades colour depth for refresh rate |
 | `LED_IDLE` | `off` | Idle screen: `clock` shows the time whenever nothing else is on the panel, `off` leaves it dark. Switchable at runtime with `PUT /display/idle` |
 | `LED_IDLE_COLOR` | `info` | Colour of the idle clock: a profile colour name or `r,g,b` |
+| `LED_IDLE_STYLE` | `classic` | Face of the idle clock: `classic`, `big`, `binary`, `words`, `analog`, or `rotate` through all of them ([faces](docs/display-api.md#faces-styles-and-colour-modes)) |
+| `LED_IDLE_COLOR_MODE` | `fixed` | `fixed` (`LED_IDLE_COLOR`), `daylight` (follows the time of day), `random` (new colour every interval) |
+| `LED_IDLE_INTERVAL` | `300` | Seconds per slot of `rotate` and `random`, 30–86400. Every instance with the same settings shows the same face at the same time |
 | `DISPLAY_QUEUE` | `1` | Displays that may wait while a finite one is on the panel. `1`: a single slot, the newest wins. More: kept in order, and when full the oldest waiting one is dropped. A held display never waits in front of anything. The simulator and `/wall` queue the same way, also in `web` mode. See [the display worker](docs/architecture.md#the-display-worker) |
 
 ## Runtime Stream Switching

@@ -14,17 +14,24 @@ the browser the same inputs the panel uses:
   big-screen view (/wall) instead, which has more LEDs than the panel.
 - ``/api/preview/score`` — the scoreboard as one 64x64 frame, drawn by the
   panel's own ``score.render``, for the big-screen view to scale up.
+- ``/api/preview/clock`` — the idle screen's face right now (#162): which
+  style and colour the slot picks, until when, and for every face but
+  ``classic`` the 64x64 frame the panel shows. ``classic`` blinks every
+  second, so the canvases keep drawing that one themselves.
 """
 
 from __future__ import annotations
 
 import base64
+import time
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from PIL import Image
 
 from led_catcher.display.bdf import load_glyphs, load_metrics
+from led_catcher.display.clock_styles import DEFAULT_INTERVAL, MAX_INTERVAL, MIN_INTERVAL
 from led_catcher.display.frames import load_animation
 from led_catcher.display.modes import _resolve_font, _resolve_image, is_bare_name
 
@@ -96,6 +103,31 @@ def create_preview_router() -> APIRouter:
         matrix = ImageMatrix(PANEL_WIDTH, PANEL_HEIGHT)
         render(matrix, score)
         return _frames_json(PANEL_WIDTH, PANEL_HEIGHT, (matrix.image,), (0.0,))
+
+    @router.get("/api/preview/clock")
+    async def preview_clock(
+        style: Literal["classic", "big", "binary", "words", "analog", "rotate"] = "classic",
+        colorMode: Literal["fixed", "daylight", "random"] = "fixed",  # noqa: N803 - the API's JSON name
+        color: str = Query("0,100,255", max_length=16, pattern=r"^\d{1,3},\d{1,3},\d{1,3}$"),
+        interval: int = Query(DEFAULT_INTERVAL, ge=MIN_INTERVAL, le=MAX_INTERVAL),
+    ) -> dict:
+        from led_catcher.display.clock import IdleScreen
+        from led_catcher.display.clock_styles import render, resolve
+
+        rgb = tuple(int(c) for c in color.split(","))
+        if not all(0 <= c <= 255 for c in rgb):
+            raise HTTPException(status_code=400, detail="RGB components must be between 0 and 255")
+        now = time.time()
+        face = resolve(IdleScreen(color=rgb, style=style, color_mode=colorMode, interval=interval), now)
+        body = {
+            "style": face.style,
+            "color": list(face.color),
+            # Seconds, not a timestamp: the browser's clock need not agree with ours.
+            "validFor": max(0.0, face.until - now),
+        }
+        if face.style != "classic":
+            body.update(_frames_json(PANEL_WIDTH, PANEL_HEIGHT, (render(face.style, face.color, now),), (0.0,)))
+        return body
 
     return router
 

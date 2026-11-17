@@ -376,6 +376,39 @@ components:
           - clock
           title: Mode
           description: 'clock: show the time whenever nothing else is on the panel.'
+        style:
+          anyOf:
+          - type: string
+            enum:
+            - classic
+            - big
+            - binary
+            - words
+            - analog
+            - rotate
+          - type: 'null'
+          title: Style
+          description: 'The clock''s face; rotate changes it every interval. Omitted: keep the current
+            one.'
+        colorMode:
+          anyOf:
+          - type: string
+            enum:
+            - fixed
+            - daylight
+            - random
+          - type: 'null'
+          title: Colormode
+          description: 'fixed: the colour; daylight: follows the time of day; random: a new one every
+            interval. Omitted: keep the current one.'
+        interval:
+          anyOf:
+          - type: integer
+            maximum: 86400.0
+            minimum: 30.0
+          - type: 'null'
+          title: Interval
+          description: 'Seconds per slot of rotate and random. Omitted: keep the current one.'
         color:
           anyOf:
           - prefixItems:
