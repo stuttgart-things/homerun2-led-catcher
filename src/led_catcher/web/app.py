@@ -328,6 +328,23 @@ CONTROL_PANEL_HTML = """<form class="panel-control" id="panel-control" autocompl
         <input type="color" id="pc-idle-color" value="#0064ff">
         <button type="button" class="secondary" id="pc-idle-set">Set</button>
     </div>
+    <div class="row-inline">
+        <label for="pc-idle-style">Style</label>
+        <select id="pc-idle-style">
+            <option value="classic">classic</option>
+            <option value="big">big</option>
+            <option value="binary">binary</option>
+            <option value="words">words</option>
+            <option value="analog">analog</option>
+            <option value="rotate">rotate</option>
+        </select>
+        <label for="pc-idle-colormode">Colour mode</label>
+        <select id="pc-idle-colormode">
+            <option value="fixed">fixed</option>
+            <option value="daylight">daylight</option>
+            <option value="random">random</option>
+        </select>
+    </div>
     <h2 class="pc-section">Playlist</h2>
     <label for="pc-pl-images">Images</label>
     <select id="pc-pl-images" multiple size="6" title="Ctrl/Cmd-click for several"></select>

@@ -36,6 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from led_catcher.config.settings import ApiConfig
 from led_catcher.display.clock import IDLE_MODES, IdleScreen
+from led_catcher.display.clock_styles import COLOR_MODES, DEFAULT_INTERVAL, IDLE_STYLES, MAX_INTERVAL, MIN_INTERVAL
 from led_catcher.display.modes import _resolve_image, fonts_dirs, is_bare_name, visual_aid_dirs
 from led_catcher.display.playlist import MAX_PLAYLIST_ITEMS, ORDERS, Playlist
 from led_catcher.display.remote import RemoteImageError, check_url, fetch_image, is_remote
@@ -174,6 +175,21 @@ class IdleRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mode: Literal["off", "clock"] = Field(description="clock: show the time whenever nothing else is on the panel.")
+    style: Literal["classic", "big", "binary", "words", "analog", "rotate"] | None = Field(
+        default=None,
+        description="The clock's face; rotate changes it every interval. Omitted: keep the current one.",
+    )
+    colorMode: Literal["fixed", "daylight", "random"] | None = Field(  # noqa: N815 - the API's JSON name
+        default=None,
+        description="fixed: the colour; daylight: follows the time of day; random: a new one every interval. "
+        "Omitted: keep the current one.",
+    )
+    interval: int | None = Field(
+        default=None,
+        ge=MIN_INTERVAL,
+        le=MAX_INTERVAL,
+        description="Seconds per slot of rotate and random. Omitted: keep the current one.",
+    )
     color: tuple[int, int, int] | str | None = Field(
         default=None,
         description="An RGB triple or a profile colour name. Omitted: keep the current colour.",
@@ -222,15 +238,23 @@ def list_assets(dirs, suffixes: set[str]) -> list[str]:
     return sorted(names)
 
 
-def describe_idle(idle: IdleScreen | None, active: bool, color: tuple[int, int, int]) -> dict:
+def describe_idle(idle: IdleScreen | None, active: bool, color: tuple[int, int, int], face: dict | None = None) -> dict:
     """The idle screen as ``GET /display`` reports it.
 
     ``utcOffset`` is the panel's, in seconds east of UTC, so a browser in
-    another timezone draws the time the panel shows.
+    another timezone draws the time the panel shows. ``style``, ``colorMode``
+    and ``interval`` are what the canvases hand ``/api/preview/clock`` (#162);
+    with the idle screen off, the ones it would come back with.
     """
+    if idle is not None:
+        face = {"style": idle.style, "color_mode": idle.color_mode, "interval": idle.interval}
+    face = face or {}
     return {
         "mode": idle.mode if idle is not None else "off",
         "color": list(idle.color if idle is not None else color),
+        "style": face.get("style", "classic"),
+        "colorMode": face.get("color_mode", "fixed"),
+        "interval": face.get("interval", DEFAULT_INTERVAL),
         "active": active,
         "utcOffset": time.localtime().tm_gmtoff,
     }
@@ -257,6 +281,7 @@ def create_display_router(
     idle: IdleScreen | None = None,
     idle_color: tuple[int, int, int] = DEFAULT_COLORS["info"],
     now: Callable[[], float] = time.time,
+    idle_face: dict | None = None,
 ) -> APIRouter:
     """Build the ``/display`` router.
 
@@ -273,10 +298,15 @@ def create_display_router(
     # Kept here too, not only in the worker: in web mode there is no worker,
     # and the simulator still shows the idle screen.
     state = {"idle": idle, "color": idle.color if idle is not None else idle_color, "playlist": None}
+    # The face a clock switched on later gets: style, color_mode, interval (#162).
+    if idle is not None:
+        state["face"] = {"style": idle.style, "color_mode": idle.color_mode, "interval": idle.interval}
+    else:
+        state["face"] = {"style": "classic", "color_mode": "fixed", "interval": DEFAULT_INTERVAL, **(idle_face or {})}
 
     def idle_body() -> dict:
         active = worker.idle_active if worker is not None else state["idle"] is not None
-        return describe_idle(state["idle"], active, state["color"])
+        return describe_idle(state["idle"], active, state["color"], state["face"])
 
     def playlist_body() -> dict | None:
         # The worker's, when there is one: it drops a playlist that blank()
@@ -312,6 +342,8 @@ def create_display_router(
             "maxText": api.max_text,
             "maxDuration": MAX_DURATION_SECONDS,
             "idleModes": list(IDLE_MODES),
+            "idleStyles": list(IDLE_STYLES),
+            "idleColorModes": list(COLOR_MODES),
             "playlistOrders": list(ORDERS),
             "maxPlaylistItems": MAX_PLAYLIST_ITEMS,
             "writable": api.writable,
@@ -384,8 +416,19 @@ def create_display_router(
         ``LED_IDLE``."""
         if body.color is not None:
             state["color"] = resolve_color(body.color, palette)
-        state["idle"] = IdleScreen(mode=body.mode, color=state["color"]) if body.mode != "off" else None
-        logger.info("idle screen from API: %s", body.mode, extra={"system": API_SYSTEM, "idle": body.mode})
+        for key, value in (("style", body.style), ("color_mode", body.colorMode), ("interval", body.interval)):
+            if value is not None:
+                state["face"][key] = value
+        state["idle"] = (
+            IdleScreen(mode=body.mode, color=state["color"], **state["face"]) if body.mode != "off" else None
+        )
+        logger.info(
+            "idle screen from API: %s (%s, %s colour)",
+            body.mode,
+            state["face"]["style"],
+            state["face"]["color_mode"],
+            extra={"system": API_SYSTEM, "idle": body.mode},
+        )
         if worker is not None:
             worker.set_idle(state["idle"])
         if tracker is not None:

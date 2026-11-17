@@ -88,8 +88,13 @@ def _idle_screen(cfg: Config, profile: Profile) -> tuple[IdleScreen | None, tupl
             known = ", ".join(sorted(profile.colors))
             raise ValueError(f"LED_IDLE_COLOR '{color}': not a colour in the profile ({known})")
         color = rgb
-    idle = IdleScreen(mode=cfg.idle, color=tuple(color)) if cfg.idle != "off" else None
+    idle = IdleScreen(mode=cfg.idle, color=tuple(color), **_idle_face(cfg)) if cfg.idle != "off" else None
     return idle, tuple(color)
+
+
+def _idle_face(cfg: Config) -> dict:
+    """LED_IDLE_STYLE, LED_IDLE_COLOR_MODE and LED_IDLE_INTERVAL as IdleScreen fields (#162)."""
+    return {"style": cfg.idle_style, "color_mode": cfg.idle_color_mode, "interval": cfg.idle_interval}
 
 
 def _build_app(
@@ -135,7 +140,15 @@ def _build_app(
     if worker is not None:
         worker.set_idle(idle)
     app.include_router(
-        create_display_router(worker, cfg.api, tracker=tracker, colors=profile.colors, idle=idle, idle_color=idle_color)
+        create_display_router(
+            worker,
+            cfg.api,
+            tracker=tracker,
+            colors=profile.colors,
+            idle=idle,
+            idle_color=idle_color,
+            idle_face=_idle_face(cfg),
+        )
     )
     if consumer is not None:
         app.include_router(create_control_router(consumer))
@@ -275,7 +288,7 @@ async def _run(cfg: Config) -> int:
         logger.error("invalid configuration: %s", exc)
         return 1
     if idle is not None:
-        logger.info("idle screen: %s", idle.mode)
+        logger.info("idle screen: %s (%s, %s colour)", idle.mode, idle.style, idle.color_mode)
     consumer: RedisConsumer | None = None
     if standalone:
         # No Redis, no consumer, no rule matching: the /display API is the

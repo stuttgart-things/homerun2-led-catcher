@@ -99,6 +99,9 @@ class Config:
     ui_stream_presets: list[list[str]] = field(default_factory=list)
     idle: str = "off"  # the idle screen: off, clock (#115)
     idle_color: str | tuple[int, int, int] = "info"  # a colour name, resolved against the profile, or RGB
+    idle_style: str = "classic"  # the clock's face, or rotate (#162)
+    idle_color_mode: str = "fixed"  # fixed, daylight, random (#162)
+    idle_interval: int = 300  # seconds a rotate/random slot lasts (#162)
     display_queue: int = 1  # displays that may wait for the panel; 1 = newest wins (#142)
     redis_startup_timeout: float = DEFAULT_REDIS_STARTUP_TIMEOUT
     log_format: str = "json"
@@ -172,6 +175,14 @@ def parse_idle(raw: str) -> str:
     value = raw.strip().lower() or "off"
     if value not in IDLE_MODES:
         raise ValueError(f"LED_IDLE '{raw}': must be one of {', '.join(IDLE_MODES)}")
+    return value
+
+
+def parse_choice(key: str, raw: str, choices: tuple[str, ...], default: str) -> str:
+    """One of ``choices`` from the environment, ``default`` when unset; raises otherwise."""
+    value = raw.strip().lower() or default
+    if value not in choices:
+        raise ValueError(f"{key} '{raw}': must be one of {', '.join(choices)}")
     return value
 
 
@@ -328,6 +339,8 @@ def parse_max_message_age(raw: str) -> float:
 
 
 def load_config() -> Config:
+    from led_catcher.display import clock_styles as styles
+
     redis_cfg = RedisConfig(
         addr=_getenv("REDIS_ADDR", "localhost"),
         port=int(_getenv("REDIS_PORT", "6379")),
@@ -354,6 +367,13 @@ def load_config() -> Config:
         ui_stream_presets=parse_stream_presets(_getenv("UI_STREAM_PRESETS", ""), redis_cfg.streams),
         idle=parse_idle(_getenv("LED_IDLE", "")),
         idle_color=parse_color("LED_IDLE_COLOR", _getenv("LED_IDLE_COLOR", ""), "info"),
+        idle_style=parse_choice("LED_IDLE_STYLE", _getenv("LED_IDLE_STYLE", ""), styles.IDLE_STYLES, "classic"),
+        idle_color_mode=parse_choice(
+            "LED_IDLE_COLOR_MODE", _getenv("LED_IDLE_COLOR_MODE", ""), styles.COLOR_MODES, "fixed"
+        ),
+        idle_interval=_env_int(
+            "LED_IDLE_INTERVAL", styles.DEFAULT_INTERVAL, minimum=styles.MIN_INTERVAL, maximum=styles.MAX_INTERVAL
+        ),
         display_queue=_env_int("DISPLAY_QUEUE", 1, minimum=1),
         redis_startup_timeout=parse_redis_startup_timeout(_getenv("REDIS_STARTUP_TIMEOUT", "")),
         log_format=_getenv("LOG_FORMAT", "json"),

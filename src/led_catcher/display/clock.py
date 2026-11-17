@@ -5,11 +5,13 @@ at once, and it comes back by itself when that display is done, so the panel
 is only dark when the idle screen is switched off.
 
 The simulator canvas draws the same layout from the same BDF glyphs
-(templates/index.html, ``idleClock``). Change one, change the other.
+(templates/index.html, ``idleClock``). Change one, change the other. The other
+faces (#162) are drawn here only: display/clock_styles.py.
 """
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass
 
@@ -41,10 +43,18 @@ PERIOD_DOTS = ((2, -1),)
 
 @dataclass(frozen=True)
 class IdleScreen:
-    """What the panel shows when it has nothing else to show."""
+    """What the panel shows when it has nothing else to show.
+
+    ``style``, ``color_mode`` and ``interval`` pick the face (#162,
+    display/clock_styles.py): ``classic`` in a ``fixed`` colour is the clock
+    this screen always was.
+    """
 
     mode: str = "clock"
     color: tuple[int, int, int] = (0, 100, 255)
+    style: str = "classic"
+    color_mode: str = "fixed"
+    interval: int = 300
 
 
 @dataclass(frozen=True)
@@ -125,17 +135,38 @@ def dimmed(color: tuple[int, int, int], factor: float = DATE_DIM) -> tuple[int, 
     return tuple(int(c * factor) for c in color)  # type: ignore[return-value]
 
 
-def draw_clock(matrix, idle: IdleScreen, now: float) -> ClockFace:
-    """Draw one frame of the clock and put it on the panel."""
+def draw_clock(matrix, idle: IdleScreen, now: float, color: tuple[int, int, int] | None = None) -> ClockFace:
+    """Draw one frame of the classic clock and put it on the panel."""
     from led_catcher.display.modes import _resolve_font
 
+    color = tuple(idle.color if color is None else color)
     face = clock_face(now, matrix.width, matrix.height, _resolve_font(TIME_FONT), _resolve_font(DATE_FONT))
-    dim = dimmed(idle.color)
+    dim = dimmed(color)
     matrix.clear()
     for line in face.lines:
-        matrix.draw_text(line.font, line.x, line.baseline, dim if line.dim else idle.color, line.text)
+        matrix.draw_text(line.font, line.x, line.baseline, dim if line.dim else color, line.text)
     for x, y, is_dim in face.dots:
         if 0 <= x < matrix.width and 0 <= y < matrix.height:
-            matrix.set_pixel(x, y, *(dim if is_dim else idle.color))
+            matrix.set_pixel(x, y, *(dim if is_dim else color))
     matrix.swap()
     return face
+
+
+def draw_idle(matrix, idle: IdleScreen, now: float) -> float:
+    """Draw the idle screen's face for ``now``; returns when it next changes.
+
+    ``classic`` draws itself as it always did; every other face is rendered
+    off-screen by display/clock_styles.py and put up as one image.
+    """
+    from led_catcher.display.clock_styles import render, resolve
+
+    face = resolve(idle, now)
+    if face.style == "classic":
+        draw_clock(matrix, idle, now, face.color)
+        # The colon blinks.
+        return min(face.until, math.floor(now) + 1)
+    else:
+        matrix.clear()
+        matrix.show_image(render(face.style, face.color, now, matrix.width, matrix.height))
+        matrix.swap()
+    return face.until

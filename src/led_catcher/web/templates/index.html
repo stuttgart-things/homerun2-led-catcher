@@ -1342,27 +1342,56 @@
             return [lines, dots];
         }
 
+        // The face for now (#162): display/clock_styles.py picks style and
+        // colour and draws every face but classic; we only put the frame up.
+        async function idleFace(token, idle) {
+            const q = new URLSearchParams({
+                style: idle.style || 'classic', colorMode: idle.colorMode || 'fixed',
+                color: idle.color.join(','), interval: idle.interval || 300
+            });
+            try {
+                const res = await guard(token, fetch(BASE_PATH + '/api/preview/clock?' + q));
+                if (!res.ok) throw new Error('clock: HTTP ' + res.status);
+                const face = await guard(token, res.json());
+                if (face.frames) face.frames = face.frames.map(b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
+                return face;
+            } catch (e) {
+                if (e instanceof Cancelled) throw e;
+                return { style: 'classic', color: idle.color, validFor: 60 };
+            }
+        }
+
         async function idleClock(token) {
             const idle = idleScreen;
             // ':' and '.' are measured like the panel measures them, though set as pixels.
             const tf = await guard(token, loadText(CLOCK.timeFont, '0123456789 :'));
             const df = await guard(token, loadText(CLOCK.dateFont, '0123456789 .' + WEEKDAYS.join('')));
-            const dim = idle.color.map(c => Math.floor(c * CLOCK.dim));
-            let drawn = null;
             for (;;) {
-                const now = Date.now();
-                const texts = clockTexts(now, idle.utcOffset);
-                if (texts.join('|') !== drawn) {
-                    const [lines, dots] = clockFace(tf, df, texts);
-                    clearMatrix();
-                    for (const l of lines) drawText(l.f, l.x, l.baseline, l.dim ? dim : idle.color, l.text);
-                    for (const [x, y, isDim] of dots) {
-                        const c = isDim ? dim : idle.color;
-                        if (x >= 0 && x < GRID && y >= 0 && y < GRID) setPixel(x, y, c[0], c[1], c[2], 1.0);
-                    }
-                    drawn = texts.join('|');
+                const face = await idleFace(token, idle);
+                const end = performance.now() + Math.max(0.5, face.validFor) * 1000 + 50;
+                if (face.style !== 'classic') {
+                    drawFrame(face.frames[0]);
+                    await sleep(token, end - performance.now());
+                    continue;
                 }
-                await sleep(token, 1000 - (now % 1000) + 5);
+                const color = face.color;
+                const dim = color.map(c => Math.floor(c * CLOCK.dim));
+                let drawn = null;
+                while (performance.now() < end) {
+                    const now = Date.now();
+                    const texts = clockTexts(now, idle.utcOffset);
+                    if (texts.join('|') !== drawn) {
+                        const [lines, dots] = clockFace(tf, df, texts);
+                        clearMatrix();
+                        for (const l of lines) drawText(l.f, l.x, l.baseline, l.dim ? dim : color, l.text);
+                        for (const [x, y, isDim] of dots) {
+                            const c = isDim ? dim : color;
+                            if (x >= 0 && x < GRID && y >= 0 && y < GRID) setPixel(x, y, c[0], c[1], c[2], 1.0);
+                        }
+                        drawn = texts.join('|');
+                    }
+                    await sleep(token, Math.min(1000 - (now % 1000) + 5, end - performance.now()));
+                }
             }
         }
 
@@ -1475,6 +1504,8 @@
             if (!select || !idle) return;
             select.value = idle.mode;
             color.value = '#' + idle.color.map(c => c.toString(16).padStart(2, '0')).join('');
+            if (idle.style) document.getElementById('pc-idle-style').value = idle.style;
+            if (idle.colorMode) document.getElementById('pc-idle-colormode').value = idle.colorMode;
         }
 
         function resync(initial) {
@@ -1599,7 +1630,11 @@
             $('pc-idle-set').addEventListener('click', function () {
                 const mode = $('pc-idle').value;
                 const body = { mode: mode };
-                if (mode !== 'off') body.color = hexToRgb($('pc-idle-color').value);
+                if (mode !== 'off') {
+                    body.color = hexToRgb($('pc-idle-color').value);
+                    body.style = $('pc-idle-style').value;
+                    body.colorMode = $('pc-idle-colormode').value;
+                }
                 send('PUT', body, BASE_PATH + '/display/idle', 'idle screen: ' + mode);
             });
             $('pc-pl-start').addEventListener('click', function () {

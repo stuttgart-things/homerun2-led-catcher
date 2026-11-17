@@ -188,7 +188,8 @@ What is on the panel right now:
   "display": {"kind": "static", "text": "12:04", "image": "", "font": "6x10.bdf",
               "color": [0, 100, 255], "duration": 5.0, "hold": true},
   "queue": {"size": 1, "pending": 0, "dropped": 2},
-  "idle": {"mode": "clock", "color": [0, 100, 255], "active": false, "utcOffset": 7200},
+  "idle": {"mode": "clock", "color": [0, 100, 255], "style": "classic", "colorMode": "fixed",
+           "interval": 300, "active": false, "utcOffset": 7200},
   "playlist": null,
   "writable": true
 }
@@ -263,6 +264,46 @@ persisted: a restart returns to `LED_IDLE`. It counts against the same rate
 limit as the other writes. In the simulator, the **Idle screen** row of the
 Panel control does the same, and the clock takes the colour from the colour
 picker.
+
+### Faces: styles and colour modes
+
+The clock above is the `classic` style in a `fixed` colour, the default. Four
+more styles change at most once a minute:
+
+| Style | Face |
+|-------|------|
+| `classic` | time, weekday and date, the colon blinks |
+| `big` | hours over minutes in seven-segment digits, as large as the panel takes |
+| `binary` | BCD: a column of dots per digit, the 8 on top; the time in small figures below |
+| `words` | German word clock: `ES IST / VIERTEL / NACH / ZEHN`, minutes past the five in corner dots |
+| `analog` | dial with twelve marks, hour and minute hands |
+| `rotate` | a different style every `interval`, each style once a round in shuffled order |
+
+| Colour mode | Colour |
+|-------------|--------|
+| `fixed` | the idle colour (`LED_IDLE_COLOR`, `color`) |
+| `daylight` | follows the time of day: deep blue at night, orange at sunrise, sky at noon, red at sunset |
+| `random` | a new bright colour every `interval` |
+
+`rotate` and `random` pick per slot of `interval` seconds (default 300) from a
+generator seeded with the slot's number: the same configuration shows the same
+face at the same time on the panel, in every simulator and on `/wall`, without
+them talking to each other.
+
+At startup: `LED_IDLE_STYLE`, `LED_IDLE_COLOR_MODE`, `LED_IDLE_INTERVAL`
+(30–86400). At runtime, `style`, `colorMode` and `interval` in the same
+`PUT /display/idle`; each one omitted keeps what was set:
+
+```bash
+curl -sS -X PUT localhost:8080/display/idle \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"mode":"clock","style":"rotate","colorMode":"daylight","interval":300}'
+```
+
+Every face but `classic` is drawn once, on the server (`display/clock_styles.py`).
+The simulator and `/wall` fetch it from `GET /api/preview/clock` — the style
+and colour the slot picks, `validFor` seconds until it changes, and the 64x64
+frame the panel shows — and `/wall` scales it up like the scoreboard.
 
 ## OpenAPI
 

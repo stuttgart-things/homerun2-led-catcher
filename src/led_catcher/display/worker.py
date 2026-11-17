@@ -402,14 +402,15 @@ class DisplayWorker:
         """Show the idle screen until something is submitted, it is switched or
         changed, or the worker stops.
 
-        Redrawn only when the face changes, once a second for the blinking
-        colon. A submission sets the wake event, so it is never kept waiting;
-        the next display clears the panel before it draws.
+        Redrawn only when the face changes: once a second for the classic
+        clock's blinking colon, once a minute or at the next rotation slot for
+        the other faces (#162). A submission sets the wake event, so it is
+        never kept waiting; the next display clears the panel before it draws.
         """
-        from led_catcher.display.clock import draw_clock
+        from led_catcher.display.clock import draw_idle
 
         idle = self.idle
-        drawn_second = None
+        redraw_at = None
         with self._lock:
             self._idle_active = True
         try:
@@ -417,9 +418,9 @@ class DisplayWorker:
                 not self._stopping.is_set() and not self._wake.is_set() and self.idle is idle and self.playlist is None
             ):
                 now = self._now()
-                if int(now) != drawn_second:
+                if redraw_at is None or now >= redraw_at:
                     try:
-                        draw_clock(self._display, idle, now)
+                        redraw_at = draw_idle(self._display, idle, now)
                     except Exception:
                         # Switched off rather than retried: the next round
                         # would fail the same way, once per poll, forever.
@@ -427,9 +428,7 @@ class DisplayWorker:
                         self.set_idle(None)
                         self._blank()
                         return
-                    drawn_second = int(now)
-                until_next_second = 1.0 - (now % 1.0)
-                self._wake.wait(timeout=min(until_next_second, IDLE_SCREEN_POLL_SECONDS))
+                self._wake.wait(timeout=max(0.0, min(redraw_at - now, IDLE_SCREEN_POLL_SECONDS)))
         finally:
             with self._lock:
                 self._idle_active = False
