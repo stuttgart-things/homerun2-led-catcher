@@ -28,6 +28,7 @@ class FakeWorker:
         self.playlist = None
         self.playlist_active = False
         self.queue_size = 1
+        self.ambient_after_hold = 60
         self.pending = 0
         self.superseded = 0
 
@@ -289,7 +290,7 @@ async def test_get_reports_the_display_queue():
     async with client(make_app(worker)) as c:
         body = (await c.get("/display")).json()
 
-    assert body["queue"] == {"size": 3, "pending": 2, "dropped": 5}
+    assert body["queue"] == {"size": 3, "pending": 2, "dropped": 5, "ambientAfterHold": 60}
 
 
 async def test_options_list_the_shipped_assets():

@@ -11,7 +11,7 @@ from led_catcher.profile import Profile, match_rule
 logger = logging.getLogger(__name__)
 
 
-def create_led_handler(profile: Profile, panel=None, queue: int = 1):
+def create_led_handler(profile: Profile, panel=None, queue: int = 1, ambient_after_hold: int = 60):
     """Create a LED handler closure with the given profile.
 
     The handler hands the display to the worker thread and returns. It used to
@@ -22,9 +22,10 @@ def create_led_handler(profile: Profile, panel=None, queue: int = 1):
     already-validated `Config` rather than being read from the environment
     here, so a bad `LED_*` value is reported by the startup guard in
     `__main__` instead of surfacing as a traceback from the first handler.
-    `queue` is `DISPLAY_QUEUE`, from the same place.
+    `queue` is `DISPLAY_QUEUE`, and `ambient_after_hold` `AMBIENT_AFTER_HOLD`,
+    from the same place.
     """
-    worker = get_worker(panel=panel, queue=queue)
+    worker = get_worker(panel=panel, queue=queue, ambient_after_hold=ambient_after_hold)
 
     def led_handler(msg: CaughtMessage) -> None:
         config = match_rule(profile, msg.message)

@@ -52,6 +52,9 @@
         const BASE_PATH = '{{ base_path }}';
         // DISPLAY_QUEUE: how many displays may wait for the panel (#142, #144).
         const DISPLAY_QUEUE = Math.max(1, parseInt('{{ display_queue }}', 10) || 1);
+        // AMBIENT_AFTER_HOLD: seconds a held display stays unchanged before
+        // ambient programme may play over it; 0 = never (#166).
+        const AMBIENT_AFTER_HOLD = Math.max(0, parseFloat('{{ ambient_after_hold }}') || 0);
         // The big-screen view (/wall). Follows the same events as the
         // simulator at /, but on a larger virtual matrix: text, cards and the
         // clock are laid out again for the grid, images and GIFs are prepared
@@ -347,6 +350,7 @@
         class Cancelled extends Error {}
         let current = null;   // {token, held, idle}
         let pending = [];     // waiting, oldest first
+        let resume = null;    // {ev, since}: the held display an ambient one plays over (#166)
         let pumping = false;
         let idleScreen = null;
         let playlist = null;   // GET /display .playlist (#146)
@@ -390,6 +394,7 @@
 
         function submit(ev) {
             if (ev.kind === 'clear') {
+                resume = null;
                 pending = [];
                 if (current) cancel(current.token);
                 clear();
@@ -398,9 +403,14 @@
             }
             // DisplayWorker._submit_ambient (#161): programme only on a panel
             // that would show the idle screen or playlist; newest ambient wins.
+            // A held display unchanged for AMBIENT_AFTER_HOLD seconds counts
+            // as free, and comes back afterwards with its age (#166).
             if (ev.ambient) {
-                const busy = (current && !current.idle && !current.ambient) || pending.some(p => !p.ambient);
+                const stale = !!current && current.held && !current.ambient && AMBIENT_AFTER_HOLD > 0
+                    && performance.now() - current.since >= AMBIENT_AFTER_HOLD * 1000;
+                const busy = (current && !current.idle && !current.ambient && !stale) || pending.some(p => !p.ambient);
                 if (busy) return;
+                if (stale) resume = { ev: current.ev, since: current.since };
                 pending = [ev];
                 if (current) cancel(current.token);
                 if (!pumping) pump();
@@ -410,6 +420,7 @@
             // on the panel ends now.
             pending = pending.filter(p => !p.ambient);
             if (current && current.ambient) cancel(current.token);
+            resume = null;
             enqueue(pending, ev, DISPLAY_QUEUE);
             if (current && (current.held || current.idle)) cancel(current.token);
             if (!pumping) pump();
@@ -424,6 +435,7 @@
         function setPlaylist(next) {
             if (playlistKey(next) === playlistKey(playlist)) return;
             playlist = next || null;
+            if (playlist) resume = null;
             if (current && current.idle) {
                 cancel(current.token);
                 if (!playlist && !idleScreen) clear();
@@ -470,12 +482,20 @@
         async function pump() {
             pumping = true;
             for (;;) {
-                const ev = pending.shift();
+                let ev = pending.shift();
+                let since = performance.now();
+                if (!ev && resume) {
+                    // DisplayWorker._take_resume (#166): the held display the
+                    // programme played over, with its age.
+                    ev = resume.ev;
+                    since = resume.since;
+                    resume = null;
+                }
                 // Nothing waiting: the playlist, else the idle screen.
                 const layer = ev ? null : playlist ? 'playlist' : idleScreen !== null ? 'idle' : null;
                 if (!ev && !layer) break;
                 const token = { cancelled: false, wake: null };
-                current = { token: token, held: false, idle: layer !== null, ambient: !!(ev && ev.ambient) };
+                current = { token: token, held: false, idle: layer !== null, ambient: !!(ev && ev.ambient), ev: ev, since: since };
                 try {
                     await (layer === 'playlist' ? playPlaylist(token) : layer ? idleClock(token) : play(ev, token));
                     // An overlay gives way to what it played over, the held

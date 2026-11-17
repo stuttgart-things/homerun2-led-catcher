@@ -179,6 +179,7 @@ class FakeWorker:
         self.playlist = None
         self.playlist_active = False
         self.queue_size = 1
+        self.ambient_after_hold = 60
         self.pending = 0
         self.superseded = 0
 

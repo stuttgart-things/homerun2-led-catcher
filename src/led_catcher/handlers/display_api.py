@@ -389,8 +389,14 @@ def create_display_router(
         body = describe(worker.showing if worker is not None else None)
         if worker is not None:
             # DISPLAY_QUEUE, what waits in it now, and how many displays never
-            # reached the panel since startup (#142).
-            body["queue"] = {"size": worker.queue_size, "pending": worker.pending, "dropped": worker.superseded}
+            # reached the panel since startup (#142); and after how many
+            # seconds unchanged a held display lets ambient programme on (#166).
+            body["queue"] = {
+                "size": worker.queue_size,
+                "pending": worker.pending,
+                "dropped": worker.superseded,
+                "ambientAfterHold": worker.ambient_after_hold,
+            }
         body["idle"] = idle_body()
         body["playlist"] = playlist_body()
         body["writable"] = api.writable

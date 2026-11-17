@@ -202,7 +202,7 @@ What is on the panel right now:
   "since": "2026-09-18T07:56:09.059991+00:00",
   "display": {"kind": "static", "text": "12:04", "image": "", "font": "6x10.bdf",
               "color": [0, 100, 255], "duration": 5.0, "hold": true},
-  "queue": {"size": 1, "pending": 0, "dropped": 2},
+  "queue": {"size": 1, "pending": 0, "dropped": 2, "ambientAfterHold": 60},
   "idle": {"mode": "clock", "color": [0, 100, 255], "style": "classic", "colorMode": "fixed",
            "interval": 300, "active": false, "utcOffset": 7200},
   "playlist": null,
@@ -231,7 +231,9 @@ has interrupted the playlist.
 is the panel's, in seconds east of UTC. `queue` is there whenever a panel is
 driven (not in `LED_MODE=web`): `size` is `DISPLAY_QUEUE`, `pending` what waits
 for the panel now, `dropped` how many displays never reached it since startup —
-replaced while waiting, pushed out of a full queue, or cleared by `DELETE`.
+replaced while waiting, pushed out of a full queue, or cleared by `DELETE`. `ambientAfterHold` is
+`AMBIENT_AFTER_HOLD`: after how many seconds unchanged a held display lets
+ambient programme play over it (#166).
 
 ## Idle screen: the clock
 

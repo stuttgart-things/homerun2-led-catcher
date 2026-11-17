@@ -43,6 +43,7 @@ def create_web_app(
     replay_rate_limit: int = 30,
     base_path: str = "",
     display_queue: int = 1,
+    ambient_after_hold: int = 60,
 ) -> FastAPI:
     """Create the HTMX simulator FastAPI app.
 
@@ -71,6 +72,9 @@ def create_web_app(
     the panel. The canvas of ``/`` and ``/wall`` queues with the worker's rules
     at this length (#144), so it plays a burst the way the panel does — also in
     ``web`` mode, where there is no worker and the canvas is the only picture.
+    ``ambient_after_hold`` (``AMBIENT_AFTER_HOLD``) is the same for the
+    worker's other rule the canvas copies: when programme may play over a
+    held display (#166).
     """
     if display_queue < 1:
         raise ValueError(f"display_queue must be at least 1, got {display_queue}")
@@ -103,6 +107,7 @@ def create_web_app(
             .replace("{{ total_events }}", str(tracker.total))
             .replace("{{ mode }}", html.escape(mode))
             .replace("{{ display_queue }}", str(display_queue))
+            .replace("{{ ambient_after_hold }}", str(ambient_after_hold))
             .replace("{{ control_panel }}", CONTROL_PANEL_HTML if display_api else "")
             .replace("{{ portal_theme }}", _portal_theme(request))
             # User-supplied text from here on (message titles, POST /display),
@@ -129,6 +134,7 @@ def create_web_app(
             .replace("{{ commit }}", html.escape(commit[:7] if len(commit) > 7 else commit))
             .replace("{{ mode }}", html.escape(mode))
             .replace("{{ display_queue }}", str(display_queue))
+            .replace("{{ ambient_after_hold }}", str(ambient_after_hold))
         )
 
     @app.get("/events", response_class=HTMLResponse)

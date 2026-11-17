@@ -197,6 +197,7 @@ class FakeWorker:
         self.playlist = None
         self.playlist_active = False
         self.queue_size = 1
+        self.ambient_after_hold = 60
         self.pending = 0
         self.superseded = 0
 
@@ -216,3 +217,125 @@ async def test_post_display_takes_ambient_and_drops_hold_with_it():
     assert res.status_code == 200, res.text
     assert res.json()["display"]["ambient"] is True
     assert worker.submitted[0].ambient is True and worker.submitted[0].hold is False
+
+
+# ---- a held display that has gone stale (#166) ----
+
+
+class Clock:
+    """The worker's wall clock, moved by hand: only the age of a held display reads it."""
+
+    def __init__(self) -> None:
+        self.t = 1_000_000.0
+
+    def __call__(self) -> float:
+        return self.t
+
+
+@pytest.fixture
+def stale_worker():
+    display = FakeDisplay()
+    clock = Clock()
+    w = DisplayWorker(display, now=clock, queue=3, ambient_after_hold=60)
+    w.start()
+    yield w, display, clock
+    w.stop(timeout=2)
+
+
+def _held_score(w, text: str = "3:2") -> None:
+    w.submit(static(text, hold=True))
+    assert wait_for(lambda: w.showing is not None and w.showing.held and w.showing.config.text == text)
+
+
+def test_ambient_plays_over_a_stale_held_score_which_comes_back(stale_worker):
+    w, display, clock = stale_worker
+    _held_score(w)
+    since = w.showing.since
+    clock.t += 60
+
+    w.submit(static("NEWS", duration=0.2, ambient=True))
+
+    assert wait_for(lambda: "NEWS" in display.snapshot())
+    assert wait_for(lambda: w.showing is not None and w.showing.held and display.snapshot()[-1] == "3:2")
+    assert w.showing.since == since, "the score comes back with its age"
+    assert w.superseded == 0
+
+
+def test_ambient_during_a_fresh_held_score_is_still_dropped(stale_worker):
+    w, display, clock = stale_worker
+    _held_score(w)
+    clock.t += 59
+
+    w.submit(static("NEWS", ambient=True))
+    time.sleep(0.2)
+
+    assert "NEWS" not in display.snapshot()
+    assert w.superseded == 1
+
+
+def test_the_next_item_of_a_slot_follows_over_the_resumed_score(stale_worker):
+    w, display, clock = stale_worker
+    _held_score(w)
+    clock.t += 120
+    w.submit(static("NEWS 1", duration=0.1, ambient=True))
+    assert wait_for(lambda: "NEWS 1" in display.snapshot())
+    assert wait_for(lambda: display.snapshot()[-1] == "3:2")
+
+    w.submit(static("NEWS 2", duration=0.1, ambient=True))
+
+    assert wait_for(lambda: "NEWS 2" in display.snapshot())
+    assert wait_for(lambda: display.snapshot()[-1] == "3:2")
+
+
+def test_the_next_point_cuts_the_programme_and_replaces_the_score(stale_worker):
+    w, display, clock = stale_worker
+    _held_score(w)
+    clock.t += 60
+    w.submit(static("NEWS", duration=LONG, ambient=True))
+    assert wait_for(lambda: w.showing is not None and w.showing.ambient)
+
+    started = time.monotonic()
+    w.submit(static("4:2", hold=True))
+
+    assert wait_for(lambda: w.showing is not None and w.showing.config.text == "4:2", timeout=0.5)
+    assert time.monotonic() - started < 0.5
+    time.sleep(0.2)
+    assert display.snapshot()[-1] == "4:2", "the old score does not come back over the new one"
+    assert w.showing.since == clock.t, "a new point is a fresh display"
+
+
+def test_a_notification_during_the_programme_ends_the_old_score_too(stale_worker):
+    w, display, clock = stale_worker
+    _held_score(w)
+    clock.t += 60
+    w.submit(static("NEWS", duration=LONG, ambient=True))
+    assert wait_for(lambda: w.showing is not None and w.showing.ambient)
+
+    w.submit(static("ALERT", duration=0.1))
+
+    assert wait_for(lambda: "ALERT" in display.snapshot())
+    assert wait_for(lambda: w.showing is None)
+    time.sleep(0.2)
+    assert display.snapshot()[-1] == "ALERT", "as without the programme: the alert replaced the score"
+
+
+def test_ambient_after_hold_zero_never_plays_over_a_held_score():
+    display = FakeDisplay()
+    clock = Clock()
+    w = DisplayWorker(display, now=clock, queue=3, ambient_after_hold=0)
+    w.start()
+    try:
+        _held_score(w)
+        clock.t += 86400
+
+        w.submit(static("NEWS", ambient=True))
+        time.sleep(0.2)
+
+        assert "NEWS" not in display.snapshot()
+    finally:
+        w.stop(timeout=2)
+
+
+def test_ambient_after_hold_must_not_be_negative():
+    with pytest.raises(ValueError):
+        DisplayWorker(FakeDisplay(), ambient_after_hold=-1)

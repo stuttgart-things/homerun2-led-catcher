@@ -49,6 +49,15 @@ included -- it is dropped, not queued: a stale programme item is worth
 nothing. It never waits in front of a real display: one submitted later
 removes waiting ambient ones and cuts a running one short at once, as blank()
 would. Among ambient displays the newest wins. It is never held.
+
+One exception to "busy" (#166): a held display that has not changed for
+``AMBIENT_AFTER_HOLD`` seconds (default 60; 0 = never) is a free panel to
+ambient displays. The table tennis score is held between points, and a demo
+that plays almost without a pause would otherwise never let the programme on.
+The ambient display plays over it and the held display comes back afterwards,
+with its original age, so the next item of the same slot may follow. Anything
+real -- the next point included -- cuts the ambient display short and replaces
+the held one as before.
 """
 
 from __future__ import annotations
@@ -134,9 +143,17 @@ class DisplayWorker:
     shutting down.
     """
 
-    def __init__(self, display, idle=None, now=time.time, queue: int = 1) -> None:
+    def __init__(self, display, idle=None, now=time.time, queue: int = 1, ambient_after_hold: float = 60) -> None:
         if queue < 1:
             raise ValueError(f"queue must be at least 1, got {queue}")
+        if ambient_after_hold < 0:
+            raise ValueError(f"ambient_after_hold must not be negative, got {ambient_after_hold}")
+        # Seconds a held display stays unchanged before ambient programme may
+        # play over it; 0 = never (#166).
+        self._ambient_after_hold = ambient_after_hold
+        # The held display an ambient one plays over, shown again once it is
+        # done -- unless something real comes first (#166).
+        self._resume: Showing | None = None
         self._display = display
         # The idle screen (display.clock.IdleScreen), or None for a dark panel.
         self._idle = idle
@@ -190,6 +207,9 @@ class DisplayWorker:
                 self._drop(entry, "pre-empted")
             if self._showing is not None and self._showing.ambient:
                 self._cut.set()
+            # The held display an ambient one played over is replaced by this,
+            # as it would have been without the programme in between.
+            self._resume = None
             # A pending held display gives way to anything newer, exactly as
             # one on the panel would — so it is only ever last in the queue.
             if self._pending and _is_held(self._pending[-1].config):
@@ -207,18 +227,39 @@ class DisplayWorker:
         screen or the playlist, else dropped (#161)."""
         with self._lock:
             showing = self._showing
-            busy = (showing is not None and not showing.ambient) or any(
+            stale = showing is not None and self._stale_hold(showing)
+            busy = (showing is not None and not showing.ambient and not stale) or any(
                 not _is_ambient(e.config) for e in self._pending
             )
             if busy:
                 self._drop(entry, "busy")
                 return
+            if stale:
+                # Comes back once the programme is done (#166). Its wait ends
+                # on the wake below; the mode leaves it lit and returns.
+                logger.info(
+                    "ambient display plays over a held one unchanged for %.0fs: kind=%s",
+                    self._now() - showing.since,
+                    getattr(showing.config, "kind", "?"),
+                )
+                self._resume = showing
+                self._wake.set()
             # The newest programme item wins, waiting or on the panel.
             self._clear_pending("replaced")
             if showing is not None:
                 self._cut.set()
             self._pending.append(entry)
             self._wake.set()
+
+    def _stale_hold(self, showing: Showing) -> bool:
+        """True when a held display has been up, unchanged, for AMBIENT_AFTER_HOLD
+        seconds: ambient programme may play over it (#166). Lock held."""
+        return self._ambient_after_hold > 0 and showing.held and self._now() - showing.since >= self._ambient_after_hold
+
+    @property
+    def ambient_after_hold(self) -> float:
+        """Seconds a held display stays unchanged before ambient may play over it (``AMBIENT_AFTER_HOLD``)."""
+        return self._ambient_after_hold
 
     def blank(self) -> None:
         """Leave the panel dark, now. Never blocks.
@@ -230,6 +271,7 @@ class DisplayWorker:
         """
         with self._lock:
             self._clear_pending("blanked")
+            self._resume = None
             if self._playlist is not None:
                 logger.info("playlist stopped: panel blanked")
                 self._playlist = None
@@ -281,6 +323,8 @@ class DisplayWorker:
         """
         with self._lock:
             self._playlist = playlist
+            if playlist is not None:
+                self._resume = None
             if playlist is not None and self._showing is not None and self._showing.held:
                 # _showing is cleared here, not by the mode: a held mode
                 # returns leaving it set, and the worker only plays a playlist
@@ -372,6 +416,10 @@ class DisplayWorker:
             while not self._stopping.is_set():
                 config = self._take()
                 if config is None:
+                    resume = self._take_resume()
+                    if resume is not None:
+                        self._show(resume.config, since=resume.since)
+                        continue
                     if self.showing is None and self._playlist_due():
                         self._run_playlist()
                     elif self.idle is not None and self.showing is None:
@@ -384,6 +432,18 @@ class DisplayWorker:
         finally:
             self._set_showing(None)
             self._blank()
+
+    def _take_resume(self) -> Showing | None:
+        """The held display an ambient one played over, once the panel is
+        free again (#166); None otherwise."""
+        with self._lock:
+            resume = self._resume
+            if resume is None or self._pending or self._stopping.is_set():
+                return None
+            if self._showing is not None and self._showing is not resume:
+                return None
+            self._resume = None
+            return resume
 
     def _localise(self, config):
         """The display with an https image swapped for its cached file name.
@@ -420,8 +480,11 @@ class DisplayWorker:
                 return
         self._show(then)
 
-    def _show(self, config) -> bool:
-        """Run one display. False when blank() or stop() cut it short."""
+    def _show(self, config, since: float | None = None) -> bool:
+        """Run one display. False when blank() or stop() cut it short.
+
+        ``since`` keeps the age of a held display shown again after an ambient
+        one (#166); by default the display is new."""
         from led_catcher.display.modes import display_event
 
         if config is _BLANK:
@@ -433,7 +496,7 @@ class DisplayWorker:
         if config is None:
             return True
 
-        showing = Showing(config, time.time())
+        showing = Showing(config, self._now() if since is None else since)
         self._set_showing(showing)
         try:
             display_event(self._display, config, wait=self._wait)
@@ -615,19 +678,25 @@ class DisplayWorker:
 _worker: DisplayWorker | None = None
 
 
-def get_worker(display=None, panel=None, idle=None, queue: int = 1) -> DisplayWorker:
+def get_worker(display=None, panel=None, idle=None, queue: int = 1, ambient_after_hold: float = 60) -> DisplayWorker:
     """The process-wide display worker, started on first use.
 
     A module-level singleton for the same reason ``get_display`` is one: there
     is one panel, and it can only have one owner. ``panel`` is handed to the
     display when this call is what creates it, and so is ``idle``, the idle
-    screen it starts with, and so is ``queue``, the ``DISPLAY_QUEUE`` length.
+    screen it starts with, and so is ``queue``, the ``DISPLAY_QUEUE`` length,
+    and ``ambient_after_hold``, ``AMBIENT_AFTER_HOLD`` (#166).
     """
     global _worker
     if _worker is None:
         from led_catcher.display.matrix import get_display
 
-        _worker = DisplayWorker(display if display is not None else get_display(panel), idle=idle, queue=queue)
+        _worker = DisplayWorker(
+            display if display is not None else get_display(panel),
+            idle=idle,
+            queue=queue,
+            ambient_after_hold=ambient_after_hold,
+        )
         _worker.start()
     return _worker
 
