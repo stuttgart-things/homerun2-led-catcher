@@ -134,7 +134,8 @@ seconds, until stopped or for `total` seconds:
 
 | Field | Default | |
 |---|---|---|
-| `images` | | 1 to 50 file names in `visual_aid/` or `https://` URLs. URLs are fetched before the playlist starts |
+| `images` | | File names in `visual_aid/` or `https://` URLs. URLs are fetched before the playlist starts |
+| `items` | | Images and [clock faces](#faces-styles-and-colour-modes), played after `images`: `{"kind":"gif","image":"…"}` or `{"kind":"clock","style":"big","colorMode":"daylight","color":[r,g,b]}` (`color` omitted: the idle screen's colour). `images` and `items` together: 1 to 50 |
 | `order` | `sequence` | `sequence`: as listed, round and round. `random`: shuffled anew each round, every image once a round, never one twice in a row |
 | `duration` | `10` | Seconds each image is shown, at most 600 |
 | `total` | *(none)* | Seconds the playlist runs, e.g. `600` for ten minutes, at most a day. Without it: until stopped |
@@ -146,9 +147,22 @@ curl -sS -X PUT localhost:8080/display/playlist \
   -d '{"images":["stimmung_froehlich.gif","stimmung_traurig.gif","https://example.com/cat.gif"],
        "order":"random","duration":20,"total":600}'
 
+# clocks between the GIFs: a minute each, shuffled
+curl -sS -X PUT localhost:8080/display/playlist \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"images":["stimmung_froehlich.gif"],
+       "items":[{"kind":"clock","style":"big","colorMode":"daylight"},
+                {"kind":"clock","style":"words"},
+                {"kind":"clock","style":"analog","colorMode":"random"}],
+       "order":"random","duration":60}'
+
 # stop it
 curl -sS -X DELETE localhost:8080/display/playlist -H "Authorization: Bearer $TOKEN"
 ```
+
+A clock item shows in `GET /display` as `clock:<style>:<colorMode>:<r>,<g>,<b>`
+among the image names, e.g. `clock:big:daylight:0,100,255`. The Panel control's
+**Clocks** list adds them, in the Idle screen rows' colour mode and colour.
 
 How it shares the panel:
 

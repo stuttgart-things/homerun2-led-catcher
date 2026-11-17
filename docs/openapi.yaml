@@ -433,6 +433,62 @@ components:
       - mode
       title: IdleRequest
       description: Body of ``PUT /display/idle``.
+    PlaylistItem:
+      properties:
+        kind:
+          type: string
+          enum:
+          - image
+          - gif
+          - clock
+          title: Kind
+          description: 'image/gif: a picture; clock: an idle clock face.'
+        image:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Image
+          description: 'image/gif: a file name in visual_aid/ or an https:// URL.'
+        style:
+          type: string
+          enum:
+          - classic
+          - big
+          - binary
+          - words
+          - analog
+          - rotate
+          title: Style
+          description: 'clock: the face.'
+          default: classic
+        colorMode:
+          type: string
+          enum:
+          - fixed
+          - daylight
+          - random
+          title: Colormode
+          description: 'clock: fixed (color), daylight, or random.'
+          default: fixed
+        color:
+          anyOf:
+          - prefixItems:
+            - type: integer
+            - type: integer
+            - type: integer
+            type: array
+            maxItems: 3
+            minItems: 3
+          - type: string
+          - type: 'null'
+          title: Color
+          description: 'clock: an RGB triple or a profile colour name. Omitted: the idle screen''s colour.'
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      title: PlaylistItem
+      description: 'One item of ``PUT /display/playlist``''s ``items``: an image or a clock (#162).'
     PlaylistRequest:
       properties:
         images:
@@ -440,13 +496,25 @@ components:
             type: string
           type: array
           maxItems: 50
-          minItems: 1
           title: Images
           description: File names in visual_aid/ or https:// URLs, played in this order unless order is
             random.
           examples:
           - - sunset.gif
             - https://example.com/cat.gif
+        items:
+          items:
+            $ref: '#/components/schemas/PlaylistItem'
+          type: array
+          maxItems: 50
+          title: Items
+          description: Images and clock faces, after `images`. A clock shows in GET /display as clock:<style>:<colorMode>:<r>,<g>,<b>.
+          examples:
+          - - colorMode: daylight
+              kind: clock
+              style: big
+            - image: sunset.gif
+              kind: gif
         order:
           type: string
           enum:
@@ -473,8 +541,6 @@ components:
           description: 'Seconds the playlist runs, e.g. 600 for ten minutes. Omitted: until stopped.'
       additionalProperties: false
       type: object
-      required:
-      - images
       title: PlaylistRequest
       description: Body of ``PUT /display/playlist``.
     StreamsRequest:

@@ -432,6 +432,11 @@
                     await sleep(token, Math.max(0, left) * 1000);
                     continue;
                 }
+                const face = parseClockItem(p.current.image, panel.idle && panel.idle.utcOffset);
+                if (face) {
+                    await clockFor(token, face, performance.now() + left * 1000);
+                    continue;
+                }
                 await showGif({ kind: 'gif', image: p.current.image, text: '', font: '6x10.bdf',
                                 color: '#ffffff', duration: left, hold: false }, token);
             }
@@ -697,7 +702,20 @@
         }
 
         async function idleClock(token) {
-            const idle = idleScreen;
+            return clockFor(token, idleScreen, Infinity);
+        }
+
+        // A playlist's clock item (#162): clock:<style>:<colorMode>:<r>,<g>,<b>,
+        // as display/clock_styles.py clock_item writes it. null for an image.
+        function parseClockItem(item, utcOffset) {
+            const m = /^clock:(\w+):(\w+):(\d+),(\d+),(\d+)$/.exec(item || '');
+            if (!m) return null;
+            return { mode: 'clock', style: m[1], colorMode: m[2], color: [+m[3], +m[4], +m[5]],
+                     interval: 300, utcOffset: utcOffset || 0 };
+        }
+
+        // The face of `idle` until performance.now() reaches endAt.
+        async function clockFor(token, idle, endAt) {
             const [tf, df] = await guard(token, Promise.all([
                 loadText('10x20.bdf', '0123456789 :'),
                 loadText('6x10.bdf', '0123456789 .' + WEEKDAYS.join(''))
@@ -707,9 +725,9 @@
             const ds = Math.max(1, Math.min(Math.ceil(ts / 2), Math.floor(W * 0.9 / textWidth(df, sample))));
             const gap = 2 * ts;
             const top = Math.floor((H - (tf.height * ts + gap + df.height * ds)) / 2);
-            for (;;) {
+            while (performance.now() < endAt) {
                 const face = await idleFace(token, idle);
-                const end = performance.now() + Math.max(0.5, face.validFor) * 1000 + 50;
+                const end = Math.min(endAt, performance.now() + Math.max(0.5, face.validFor) * 1000 + 50);
                 if (face.style !== 'classic') {
                     drawFrame(face.frames[0], PANEL, PANEL, K,
                               Math.floor((W - PANEL * K) / 2), Math.floor((H - PANEL * K) / 2));
@@ -731,6 +749,7 @@
                     await sleep(token, Math.min(1000 - (now % 1000) + 5, end - performance.now()));
                 }
             }
+            clear();
         }
 
         // ---- following the events ----

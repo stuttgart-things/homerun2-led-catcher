@@ -381,3 +381,71 @@ async def test_options_name_the_playlist_orders(visual_aid):
 
     assert o["playlistOrders"] == ["sequence", "random"] and o["maxPlaylistItems"] == 50
     assert "red.gif" in o["images"]
+
+
+# ---- clock items (#162) ---------------------------------------------------------
+
+
+def test_clock_items_round_trip_and_reject_what_is_not_one():
+    from led_catcher.display.clock_styles import clock_item, parse_clock_item
+
+    face = parse_clock_item(clock_item("words", "daylight", (1, 2, 3)))
+
+    assert (face.style, face.color_mode, face.color) == ("words", "daylight", (1, 2, 3))
+    for item in ("red.gif", "clock:", "clock:sundial:fixed:1,2,3", "clock:big:fixed:1,2", "clock:big:x:1,2,3"):
+        assert parse_clock_item(item) is None, item
+
+
+def test_the_worker_plays_a_clock_item_between_images(panel):
+    from led_catcher.display.clock_styles import clock_item, dim
+
+    worker, display = panel
+    # The analog dial's hub sits on the pixel RecordingDisplay samples, at 0.6 of the colour.
+    worker.set_playlist(playlist("red.gif", clock_item("analog", "fixed", (200, 100, 50)), duration=0.3))
+
+    hub = dim((200, 100, 50), 0.6)
+    assert wait_for(lambda: len(display.seen()) >= 3)
+    assert display.seen()[:3] == [COLOURS["red.gif"], hub, COLOURS["red.gif"]]
+
+
+async def test_put_playlist_takes_clock_items_after_the_images(visual_aid):
+    worker = FakeWorker()
+    async with client(make_app(worker)) as c:
+        res = await c.put(
+            "/display/playlist",
+            headers=AUTH,
+            json={
+                "images": ["red.gif"],
+                "items": [
+                    {"kind": "clock", "style": "big", "colorMode": "daylight"},
+                    {"kind": "clock", "style": "words", "color": "success"},
+                    {"kind": "gif", "image": "green.gif"},
+                ],
+            },
+        )
+
+    assert res.status_code == 200, res.text
+    assert worker.playlist.images == (
+        "red.gif",
+        "clock:big:daylight:0,100,255",  # the idle screen's colour, info by default
+        "clock:words:fixed:0,255,0",
+        "green.gif",
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"images": [], "items": []},
+        {"items": [{"kind": "gif"}]},
+        {"items": [{"kind": "clock", "style": "sundial"}]},
+        {"items": [{"kind": "clock", "color": [300, 0, 0]}]},
+        {"items": [{"kind": "clock"}] * 51},
+    ],
+)
+async def test_put_playlist_rejects_items_it_cannot_play(visual_aid, body):
+    async with client(make_app(FakeWorker())) as c:
+        res = await c.put("/display/playlist", headers=AUTH, json=body)
+
+    assert res.status_code == 422, res.text

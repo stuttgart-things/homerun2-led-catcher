@@ -32,11 +32,18 @@ from typing import TYPE_CHECKING, Callable, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from led_catcher.config.settings import ApiConfig
 from led_catcher.display.clock import IDLE_MODES, IdleScreen
-from led_catcher.display.clock_styles import COLOR_MODES, DEFAULT_INTERVAL, IDLE_STYLES, MAX_INTERVAL, MIN_INTERVAL
+from led_catcher.display.clock_styles import (
+    COLOR_MODES,
+    DEFAULT_INTERVAL,
+    IDLE_STYLES,
+    MAX_INTERVAL,
+    MIN_INTERVAL,
+    clock_item,
+)
 from led_catcher.display.modes import _resolve_image, fonts_dirs, is_bare_name, visual_aid_dirs
 from led_catcher.display.playlist import MAX_PLAYLIST_ITEMS, ORDERS, Playlist
 from led_catcher.display.remote import RemoteImageError, check_url, fetch_image, is_remote
@@ -139,16 +146,60 @@ def check_image_name(value: str) -> str:
     return value
 
 
+class PlaylistItem(BaseModel):
+    """One item of ``PUT /display/playlist``'s ``items``: an image or a clock (#162)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["image", "gif", "clock"] = Field(description="image/gif: a picture; clock: an idle clock face.")
+    image: str | None = Field(default=None, description="image/gif: a file name in visual_aid/ or an https:// URL.")
+    style: Literal["classic", "big", "binary", "words", "analog", "rotate"] = Field(
+        default="classic", description="clock: the face."
+    )
+    colorMode: Literal["fixed", "daylight", "random"] = Field(  # noqa: N815 - the API's JSON name
+        default="fixed", description="clock: fixed (color), daylight, or random."
+    )
+    color: tuple[int, int, int] | str | None = Field(
+        default=None,
+        description="clock: an RGB triple or a profile colour name. Omitted: the idle screen's colour.",
+    )
+
+    @field_validator("image")
+    @classmethod
+    def _image_name(cls, value: str | None) -> str | None:
+        return None if value is None else check_image_name(value)
+
+    @field_validator("color")
+    @classmethod
+    def _rgb_in_range(cls, value):
+        if isinstance(value, tuple) and not all(0 <= c <= 255 for c in value):
+            raise ValueError("RGB components must be between 0 and 255")
+        return value
+
+    @model_validator(mode="after")
+    def _image_for_pictures(self):
+        if self.kind != "clock" and not self.image:
+            raise ValueError(f"a {self.kind} item needs an image")
+        return self
+
+
 class PlaylistRequest(BaseModel):
     """Body of ``PUT /display/playlist``."""
 
     model_config = ConfigDict(extra="forbid")
 
     images: list[str] = Field(
-        min_length=1,
+        default_factory=list,
         max_length=MAX_PLAYLIST_ITEMS,
         description="File names in visual_aid/ or https:// URLs, played in this order unless order is random.",
         examples=[["sunset.gif", "https://example.com/cat.gif"]],
+    )
+    items: list[PlaylistItem] = Field(
+        default_factory=list,
+        max_length=MAX_PLAYLIST_ITEMS,
+        description="Images and clock faces, after `images`. A clock shows in GET /display as "
+        "clock:<style>:<colorMode>:<r>,<g>,<b>.",
+        examples=[[{"kind": "clock", "style": "big", "colorMode": "daylight"}, {"kind": "gif", "image": "sunset.gif"}]],
     )
     order: Literal["sequence", "random"] = Field(
         default="sequence",
@@ -167,6 +218,15 @@ class PlaylistRequest(BaseModel):
     @classmethod
     def _image_names(cls, value: list[str]) -> list[str]:
         return [check_image_name(name) for name in value]
+
+    @model_validator(mode="after")
+    def _some_items(self):
+        count = len(self.images) + len(self.items)
+        if count == 0:
+            raise ValueError("a playlist needs at least one image or item")
+        if count > MAX_PLAYLIST_ITEMS:
+            raise ValueError(f"at most {MAX_PLAYLIST_ITEMS} images and items together")
+        return self
 
 
 class IdleRequest(BaseModel):
@@ -455,7 +515,12 @@ def create_display_router(
         playlist; the idle screen comes back when it ends. URLs are fetched
         before it starts. Not persisted."""
         images = []
-        for name in body.images:
+        for item in [*body.images, *body.items]:
+            if isinstance(item, PlaylistItem) and item.kind == "clock":
+                color = state["color"] if item.color is None else resolve_color(item.color, palette)
+                images.append(clock_item(item.style, item.colorMode, color))
+                continue
+            name = item.image if isinstance(item, PlaylistItem) else item
             if is_remote(name):
                 name = await localize(name)
             elif _resolve_image(name) is None:
